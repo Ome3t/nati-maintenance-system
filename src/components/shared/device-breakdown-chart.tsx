@@ -1,8 +1,7 @@
 "use client"
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
-import type { DeviceBreakdown } from "../../domain/types/dashboard" // Reusing type or import from reports
-
+import type { DeviceBreakdown } from "../../../domain/types/reports"
 interface DeviceBreakdownChartProps {
   data: DeviceBreakdown[]
 }

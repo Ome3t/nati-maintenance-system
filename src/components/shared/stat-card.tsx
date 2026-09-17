@@ -14,7 +14,8 @@ export function StatCard({ label, value, hint, trend = "neutral", prefix = "", s
   const isNumber = typeof value === "number"
 
   return (
-    <Card className="bg-card border-border/50 shadow-sm hover:border-primary/50 transition-colors">
+    // Added: transition-all, duration-200, hover:scale-[1.02], hover:border-emerald-500/30, active:scale-[0.98], cursor-pointer
+    <Card className="bg-card border-border/50 shadow-sm transition-all duration-200 ease-out hover:scale-[1.02] hover:border-emerald-500/30 hover:shadow-lg active:scale-[0.98] cursor-pointer">
       <CardContent className="p-6">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
           {label}

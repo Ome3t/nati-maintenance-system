@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import type { AttentionItem } from "../../domain/types/dashboard"
+import type { AttentionItem } from "../../../domain/types/dashboard"
 import { AlertCircle, AlertTriangle, Info, ChevronDown, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 

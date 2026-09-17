@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils"
 import { downloadCSV, convertArrayToCSV } from "@/lib/csv-export"
 import { Download, RefreshCw, FileSpreadsheet } from "lucide-react"
 import { toast } from "sonner"
-import type { ReportData, DateRange } from "../../../../domain/types/reports"
+import type { ReportData, DateRange, TopJob } from "../../../../../domain/types/reports"
 
 const dateRanges: { label: string; value: DateRange }[] = [
   { label: "Today", value: "TODAY" },
@@ -26,6 +26,7 @@ export default function ReportsPage() {
   const [range, setRange] = useState<DateRange>("MONTH")
   const [isLoading, setIsLoading] = useState(true)
   const [counterKey, setCounterKey] = useState(0)
+  const [isExporting, setIsExporting] = useState(false) // Added loading state
 
   useEffect(() => {
     loadData(true)
@@ -44,9 +45,10 @@ export default function ReportsPage() {
     setTimeout(() => loadData(true), 50)
   }
 
-  // --- NEW EXPORT FUNCTION ---
   const handleExport = () => {
     if (!data) return
+    
+    setIsExporting(true) // Start loading
 
     // 1. Format Summary
     const summaryCSV = `Metric,Value\nTotal Revenue,${data.summary.totalRevenue}\nTotal Jobs,${data.summary.totalJobs}\nAvg Repair Time,${data.summary.avgRepairTime}\nCompletion Rate,${data.summary.completionRate}%\n`
@@ -70,8 +72,10 @@ export default function ReportsPage() {
     toast.success("Report exported successfully", {
       description: `Saved as ${fileName}`,
     })
+
+    // 7. Stop loading after a short delay
+    setTimeout(() => setIsExporting(false), 600)
   }
-  // ---------------------------
 
   if (isLoading || !data) {
     return (
@@ -82,23 +86,23 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-page-enter">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Reports & Analytics</h1>
-          <p className="text-sm text-zinc-400 mt-1">Business performance overview</p>
+          <h1 className="text-2xl font-bold text-foreground">Reports & Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-1">Business performance overview</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Date Range Segmented Control */}
-          <div className="flex rounded-lg border border-white/10 bg-zinc-900/50 p-1">
+          <div className="flex rounded-lg border border-border bg-muted/50 p-1">
             {dateRanges.map((r) => (
               <button
                 key={r.value}
                 onClick={() => handleRangeChange(r.value)}
                 className={cn(
                   "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-                  range === r.value ? "bg-emerald-500/20 text-emerald-500" : "text-zinc-400 hover:text-white"
+                  range === r.value ? "bg-emerald-500/20 text-emerald-500" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {r.label}
@@ -106,13 +110,18 @@ export default function ReportsPage() {
             ))}
           </div>
           
-          {/* EXPORT BUTTON (Now Wired) */}
+          {/* EXPORT BUTTON with Loading State */}
           <button 
             onClick={handleExport}
-            className="flex items-center gap-2 rounded-lg bg-emerald-600 border border-emerald-500/20 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-all"
+            disabled={isExporting}
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 border border-emerald-500/20 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            <FileSpreadsheet className="h-4 w-4" />
-            Export CSV
+            {isExporting ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4" />
+            )}
+            {isExporting ? "Exporting..." : "Export CSV"}
           </button>
         </div>
       </div>
@@ -147,11 +156,11 @@ export default function ReportsPage() {
         
         <Panel title="Top Revenue Jobs">
           <div className="space-y-3">
-            {data.topJobs.map((job) => (
-              <div key={job.id} className="flex items-center justify-between rounded-lg border border-white/5 bg-zinc-900/30 p-4">
+            {data.topJobs.map((job: TopJob) => (
+              <div key={job.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-4">
                 <div>
-                  <div className="font-medium text-white">Job #{job.jobNumber} - {job.device}</div>
-                  <div className="text-xs text-zinc-500 mt-1">{job.customer}</div>
+                  <div className="font-medium text-foreground">Job #{job.jobNumber} - {job.device}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{job.customer}</div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-emerald-500">{job.revenue.toLocaleString()} ETB</div>

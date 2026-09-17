@@ -18,47 +18,45 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Bell, AlertCircle, RefreshCw } from "lucide-react"
-import type { ManagerDashboardData } from "../../../domain/types/dashboard"
+import { cn } from "@/lib/utils"
+import type { ManagerDashboardData, RecentJob, RecentActivityItem } from "../../../../domain/types/dashboard"
+import { DashboardSkeleton } from "@/components/shared/dashboard-skeleton"
 
 export default function ManagerDashboardPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [data, setData] = useState<ManagerDashboardData | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+  const [counterKey, setCounterKey] = useState(0) // 
 
-  // Initial data fetch
   useEffect(() => {
-    fetchData()
+    fetchData(true) // Trigger animation on initial load
   }, [])
 
-  const fetchData = async () => {
+  const fetchData = async (triggerCounter = false) => {
     const dashboardData = await getManagerDashboardData()
     setData(dashboardData)
     setLastUpdated(new Date())
+    if (triggerCounter) {
+      setCounterKey(prev => prev + 1) // <-- ADDED THIS
+    }
   }
 
   const handleRefresh = () => {
     startTransition(() => {
       router.refresh()
-      fetchData()
+      fetchData(true) // <-- CHANGED: true to trigger counter animation
     })
   }
 
   if (!data) {
-    return (
-      <div className="flex h-[400px] items-center justify-center">
-        <div className="flex items-center gap-3 text-zinc-400">
-          <RefreshCw className="h-5 w-5 animate-spin" />
-          <span>Loading dashboard...</span>
-        </div>
-      </div>
-    )
+    return <DashboardSkeleton />
   }
 
   const { summary, attentionItems, recentJobs, technicianActivity, recentActivity, revenueTrend } = data
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-page-enter">
       {/* Header Section with Live Indicator */}
       <div className="flex items-center justify-between">
         <div>
@@ -88,27 +86,32 @@ export default function ManagerDashboardPage() {
         </div>
       </div>
 
-      {/* 1. KPI Strip (Top Row) */}
+      {/* 1. KPI Strip (Top Row) - Added counterKey to force re-animation */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          key={`revenue-${counterKey}`}
           label="Today's Revenue"
-          value={`${summary.todayRevenue.toLocaleString()} ETB`}
+          value={summary.todayRevenue}
+          suffix=" ETB"
           hint={`${summary.todayPaymentCount} payments`}
           trend="up"
         />
         <StatCard 
+          key={`active-${counterKey}`}
           label="Active Jobs" 
-          value={String(summary.activeJobs)} 
+          value={summary.activeJobs} 
           hint="Currently in workshop"
         />
         <StatCard 
+          key={`intake-${counterKey}`}
           label="Today's Intake" 
-          value={String(summary.todayJobs)} 
+          value={summary.todayJobs} 
           hint="New devices received"
         />
         <StatCard 
+          key={`attention-${counterKey}`}
           label="Needs Attention" 
-          value={String(summary.needsAttentionCount)} 
+          value={summary.needsAttentionCount} 
           hint="Action required"
           trend="down"
         />
@@ -152,7 +155,7 @@ export default function ManagerDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentJobs.map((job) => (
+                {recentJobs.map((job: RecentJob) => (
                   <TableRow key={job.id} className="border-border/50 hover:bg-accent/50">
                     <TableCell className="font-mono text-sm text-foreground">#{job.jobNumber}</TableCell>
                     <TableCell className="text-foreground">{job.customerName}</TableCell>
@@ -166,7 +169,7 @@ export default function ManagerDashboardPage() {
         </div>
 
         {/* Right Column (1/3 width) - Activity & Technicians */}
-        <div className="space-y-6">
+        <div className="space-y-6 animate-page-enter">
           
           {/* Technician Activity */}
           <Panel title="Technician Workload">
@@ -176,7 +179,7 @@ export default function ManagerDashboardPage() {
           {/* Recent Activity Feed */}
           <Panel title="Live Activity">
             <ul className="space-y-4">
-              {recentActivity.map((event) => (
+              {recentActivity.map((event: RecentActivityItem) => (
                 <li key={event.id} className="flex gap-3">
                   <div className="mt-1 h-2 w-2 rounded-full bg-primary shrink-0" />
                   <div className="space-y-1">
@@ -192,9 +195,4 @@ export default function ManagerDashboardPage() {
       </div>
     </div>
   )
-}
-
-// Helper for conditional classes
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ")
 }

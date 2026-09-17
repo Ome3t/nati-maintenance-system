@@ -22,6 +22,7 @@ export type ReportSummary = {
 export type RevenueDataPoint = {
   date: string
   revenue: number
+  jobs: number // 
 }
 
 export type TopJob = {

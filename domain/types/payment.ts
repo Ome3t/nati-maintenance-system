@@ -1,5 +1,4 @@
 export type PaymentMethod = "CASH" | "TELEBIRR" | "BANK_TRANSFER" | "CARD"
-
 export type PaymentStatus = "PAID" | "PARTIALLY_PAID" | "PENDING"
 
 export type Payment = {
@@ -12,7 +11,7 @@ export type Payment = {
   paymentMethod: PaymentMethod
   paymentStatus: PaymentStatus
   paidAt: string
-  recordedBy: string // Cashier/Manager name
+  recordedBy: string
   notes?: string
 }
 

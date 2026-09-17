@@ -1,7 +1,7 @@
 "use client"
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
-import type { TechnicianPerformance } from "../../domain/types/reports"
+import type { TechnicianPerformance } from "../../../domain/types/reports"
 
 interface TechnicianChartProps {
   data: TechnicianPerformance[]

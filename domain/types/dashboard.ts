@@ -55,33 +55,24 @@ export type RecentActivityItem = {
   createdAt: string
 }
 
-export type ManagerDashboardData = {
-  summary: DashboardSummary
-  attentionItems: AttentionItem[]
-  recentJobs: RecentJob[]
-  technicianActivity: TechnicianActivity[]
-  recentActivity: RecentActivityItem[]
-}
-// Add to existing types
 export type RevenueDataPoint = {
-  date: string // e.g., "Mon", "Tue"
+  date: string
   revenue: number
   jobs: number
 }
 
 export type JobCategoryData = {
-  name: string // e.g., "Phone", "Computer"
+  name: string
   value: number
   color: string
 }
 
-// Update ManagerDashboardData to include charts
 export type ManagerDashboardData = {
   summary: DashboardSummary
   attentionItems: AttentionItem[]
   recentJobs: RecentJob[]
   technicianActivity: TechnicianActivity[]
   recentActivity: RecentActivityItem[]
-  revenueTrend: RevenueDataPoint[] // NEW
-  deviceBreakdown: JobCategoryData[] // NEW
+  revenueTrend: RevenueDataPoint[]
+  deviceBreakdown: JobCategoryData[]
 }

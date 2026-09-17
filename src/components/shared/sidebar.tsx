@@ -14,6 +14,8 @@ const navigation = [
   { name: "Settings", href: "/manager/settings", icon: Settings },
 ]
 
+// ... (keep imports and navigation array the same)
+
 export function Sidebar() {
   const pathname = usePathname()
 
@@ -31,11 +33,12 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
+              // Added: transition-all, duration-150, active:scale-95, cursor-pointer
               className={cn(
-                "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200",
+                "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-150 ease-out active:scale-95 cursor-pointer",
                 isActive
-                  ? "bg-emerald-500/10 text-emerald-500" // Active state: Green tint
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white" // Inactive: Gray
+                  ? "bg-emerald-500/10 text-emerald-500" 
+                  : "text-zinc-400 hover:bg-white/5 hover:text-white" 
               )}
             >
               <item.icon className="h-5 w-5" />

@@ -14,6 +14,7 @@ const generateData = (range: DateRange): ReportData => {
     revenueTrend: Array.from({ length: range === "TODAY" ? 12 : 7 }, (_, i) => ({
       date: range === "TODAY" ? `${i * 2}h` : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
       revenue: Math.floor(Math.random() * 5000) + 2000,
+      jobs: Math.floor(Math.random() * 10) + 1, // <-- ADDED THIS LINE
     })),
     deviceBreakdown: [
       { name: "Phones", value: 65, color: "#10b981" },
