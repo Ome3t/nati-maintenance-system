@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "next-themes"
@@ -10,10 +11,24 @@ export const metadata: Metadata = {
   title: "Nati Maintenance System",
   description: "Internal business management system for Nati Mobile Maintenance",
 }
+=======
+﻿import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { Providers } from "./providers";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "Nati Maintenance",
+  description: "POS + Repair Management + Inventory System",
+};
+>>>>>>> main
 
 export default function RootLayout({
   children,
 }: {
+<<<<<<< HEAD
   children: React.ReactNode
 }) {
   return (
@@ -31,4 +46,15 @@ export default function RootLayout({
       </body>
     </html>
   )
+=======
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+>>>>>>> main
 }
