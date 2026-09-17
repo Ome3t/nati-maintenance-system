@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export async function GET() {
+  try {
+    const sales = await prisma.sale.findMany({
+      include: {
+        customer: true,
+        cashier: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    return NextResponse.json(sales);
+  } catch (error) {
+    console.error("Sales GET error:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch sales" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
-    // Generate invoice number
     const invoiceNumber = `INV-${Date.now().toString().slice(-8)}`;
 
-    // Create sale with items in a transaction
     const sale = await prisma.$transaction(async (tx) => {
-      // Create the sale
       const newSale = await tx.sale.create({
         data: {
           invoiceNumber,
@@ -25,7 +41,6 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Create sale items and update inventory
       for (const item of body.items) {
         await tx.saleItem.create({
           data: {
@@ -37,17 +52,11 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        // Decrease inventory
         await tx.product.update({
           where: { id: item.productId },
-          data: {
-            currentStock: {
-              decrement: item.quantity,
-            },
-          },
+          data: { currentStock: { decrement: item.quantity } },
         });
 
-        // Create inventory movement
         await tx.inventoryMovement.create({
           data: {
             productId: item.productId,
@@ -60,7 +69,6 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Create payment record
       if (body.paidAmount > 0) {
         await tx.payment.create({
           data: {
@@ -79,9 +87,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(sale);
   } catch (error: any) {
-    console.error("Sale error:", error);
+    console.error("Sale creation error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to create sale" },
+      { error: error.message || "Failed" },
       { status: 500 }
     );
   }

@@ -34,6 +34,8 @@ enum JobStatus {
   WAITING_FOR_PARTS
   READY_FOR_PICKUP
   COMPLETED
+  NOT_REPAIRABLE
+  DELIVERED
   CANCELLED
 }
 
@@ -259,15 +261,17 @@ model Job {
 }
 
 model JobItem {
-  id        String  @id @default(cuid())
-  jobId     String
-  productId String
-  quantity  Int
-  unitPrice Decimal @db.Decimal(10, 2)
-  total     Decimal @db.Decimal(10, 2)
+  id          String  @id @default(cuid())
+  jobId       String
+  productId   String?
+  name        String
+  quantity    Int
+  unitCost    Decimal @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
 
-  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
 
   @@index([jobId])
   @@index([productId])

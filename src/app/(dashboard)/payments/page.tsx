@@ -1,100 +1,185 @@
-"use client";
+import { prisma } from "@/lib/prisma";
 
-import { useState, useEffect } from "react";
-import { CreditCard, Banknote, Smartphone } from "lucide-react";
+export default async function ReportsPage() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-interface Payment {
-  id: string;
-  paymentNumber: string;
-  amount: number;
-  method: string;
-  createdAt: string;
-  customer?: { name: string };
-  sale?: { invoiceNumber: string };
-  job?: { jobNumber: string };
-}
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-export default function PaymentsPage() {
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [
+    todaySales,
+    monthSales,
+    totalSales,
+    todayJobs,
+    monthJobs,
+    completedJobs,
+    pendingJobs,
+    totalExpenses,
+    monthExpenses,
+    totalPayments,
+    outstanding,
+    topProducts,
+  ] = await Promise.all([
+    prisma.sale.aggregate({
+      where: { createdAt: { gte: today } },
+      _sum: { total: true },
+      _count: true,
+    }),
+    prisma.sale.aggregate({
+      where: { createdAt: { gte: monthStart } },
+      _sum: { total: true },
+      _count: true,
+    }),
+    prisma.sale.aggregate({ _sum: { total: true }, _count: true }),
+    prisma.job.count({ where: { createdAt: { gte: today } } }),
+    prisma.job.count({ where: { createdAt: { gte: monthStart } } }),
+    prisma.job.count({ where: { status: "COMPLETED" } }),
+    prisma.job.count({
+      where: { status: { in: ["PENDING", "ASSIGNED", "IN_PROGRESS", "WAITING_FOR_PARTS", "READY_FOR_PICKUP"] } },
+    }),
+    prisma.expense.aggregate({ _sum: { amount: true } }),
+    prisma.expense.aggregate({
+      where: { date: { gte: monthStart } },
+      _sum: { amount: true },
+    }),
+    prisma.payment.aggregate({ _sum: { amount: true } }),
+    prisma.job.aggregate({
+      where: { paymentStatus: { not: "PAID" } },
+      _sum: { remainingAmount: true },
+    }),
+    prisma.saleItem.groupBy({
+      by: ["productId"],
+      _sum: { quantity: true, total: true },
+      orderBy: { _sum: { quantity: "desc" } },
+      take: 5,
+    }),
+  ]);
 
-  useEffect(() => {
-    fetchPayments();
-  }, []);
+  const productIds = topProducts.map((p) => p.productId);
+  const productDetails = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+  });
 
-  const fetchPayments = async () => {
-    try {
-      const res = await fetch("/api/payments");
-      const data = await res.json();
-      setPayments(data);
-    } catch (error) {
-      console.error("Failed to fetch payments:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const todayRevenue = Number(todaySales._sum.total || 0);
+  const monthRevenue = Number(monthSales._sum.total || 0);
+  const totalRevenue = Number(totalSales._sum.total || 0);
+  const totalCosts = Number(totalExpenses._sum.amount || 0);
+  const monthCosts = Number(monthExpenses._sum.amount || 0);
+  const profit = totalRevenue - totalCosts;
+  const outstandingAmount = Number(outstanding._sum.remainingAmount || 0);
 
-  const totalPayments = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-
-  const methodIcons: Record<string, any> = {
-    CASH: Banknote,
-    BANK_TRANSFER: CreditCard,
-    MOBILE_MONEY: Smartphone,
-  };
+  const cards = [
+    { label: "Today's Revenue", value: `${todayRevenue.toLocaleString()} ETB`, subtitle: `${todaySales._count} sales` },
+    { label: "This Month", value: `${monthRevenue.toLocaleString()} ETB`, subtitle: `${monthSales._count} sales` },
+    { label: "Total Revenue", value: `${totalRevenue.toLocaleString()} ETB`, subtitle: `${totalSales._count} sales` },
+    { label: "Total Payments", value: `${Number(totalPayments._sum.amount || 0).toLocaleString()} ETB`, subtitle: "All time" },
+    { label: "Today's Jobs", value: todayJobs.toString(), subtitle: "Created today" },
+    { label: "This Month Jobs", value: monthJobs.toString(), subtitle: "Created this month" },
+    { label: "Completed Jobs", value: completedJobs.toString(), subtitle: "All time" },
+    { label: "Pending Jobs", value: pendingJobs.toString(), subtitle: "Active jobs" },
+  ];
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-6">Payments</h1>
+    <div className="space-y-6">
+      <h1 className="text-xl font-bold text-slate-900">Reports</h1>
 
-      <div className="bg-blue-600 text-white rounded-lg p-6 mb-6">
-        <p className="text-sm opacity-90">Total Payments</p>
-        <p className="text-3xl font-bold">ETB {totalPayments}</p>
+      {/* Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {cards.map((card) => (
+          <div key={card.label} className="bg-white rounded-lg border border-slate-200 p-5">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+              {card.label}
+            </p>
+            <p className="text-2xl font-bold text-slate-900 mt-2">{card.value}</p>
+            <p className="text-xs text-slate-500 mt-1">{card.subtitle}</p>
+          </div>
+        ))}
       </div>
 
-      {loading ? (
-        <div className="text-center py-12">Loading...</div>
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment #</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Date</th>
+      {/* Financial Summary */}
+      <div className="bg-white rounded-lg border border-slate-200">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Financial Summary</h2>
+        </div>
+        <div className="p-5">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-slate-600">Total Revenue</span>
+              <span className="text-lg font-bold text-green-600">
+                {totalRevenue.toLocaleString()} ETB
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-t border-slate-100">
+              <span className="text-sm text-slate-600">Total Expenses</span>
+              <span className="text-lg font-bold text-red-600">
+                {totalCosts.toLocaleString()} ETB
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-t border-slate-100">
+              <span className="text-sm text-slate-600">This Month Expenses</span>
+              <span className="text-base font-medium text-red-600">
+                {monthCosts.toLocaleString()} ETB
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-3 border-t border-slate-200 bg-slate-50 px-3 rounded">
+              <span className="text-sm font-semibold text-slate-900">Net Profit</span>
+              <span className="text-2xl font-bold text-slate-900">
+                {profit.toLocaleString()} ETB
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-slate-600">Outstanding Balance</span>
+              <span className="text-base font-bold text-amber-600">
+                {outstandingAmount.toLocaleString()} ETB
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Top Products */}
+      <div className="bg-white rounded-lg border border-slate-200">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Top Selling Products</h2>
+        </div>
+        {topProducts.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-8">No sales yet</p>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Product
+                </th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Qty Sold
+                </th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Revenue
+                </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {payments.map((payment) => {
-                const MethodIcon = methodIcons[payment.method] || CreditCard;
+            <tbody>
+              {topProducts.map((tp) => {
+                const product = productDetails.find((p) => p.id === tp.productId);
                 return (
-                  <tr key={payment.id}>
-                    <td className="px-6 py-4 text-sm font-medium">{payment.paymentNumber}</td>
-                    <td className="px-6 py-4 text-sm">{payment.customer?.name || "N/A"}</td>
-                    <td className="px-6 py-4 text-sm">
-                      {payment.sale?.invoiceNumber || payment.job?.jobNumber || "N/A"}
+                  <tr key={tp.productId} className="border-b border-slate-50 last:border-0">
+                    <td className="px-5 py-3.5 text-sm text-slate-900">
+                      {product?.name || "Unknown"}
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className="flex items-center">
-                        <MethodIcon className="h-4 w-4 mr-2" />
-                        {payment.method}
-                      </span>
+                    <td className="px-5 py-3.5 text-sm text-slate-700 text-right">
+                      {tp._sum.quantity || 0}
                     </td>
-                    <td className="px-6 py-4 text-right text-sm font-medium">
-                      ETB {Number(payment.amount)}
-                    </td>
-                    <td className="px-6 py-4 text-right text-sm">
-                      {new Date(payment.createdAt).toLocaleDateString()}
+                    <td className="px-5 py-3.5 text-sm font-medium text-slate-900 text-right">
+                      {Number(tp._sum.total || 0).toLocaleString()} ETB
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

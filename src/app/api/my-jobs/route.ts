@@ -4,21 +4,18 @@ import { auth } from "@/lib/auth";
 
 export async function GET() {
   const session = await auth();
-  
+
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const jobs = await prisma.job.findMany({
-    where: {
-      technicianId: session.user.id,
-    },
+    where: { technicianId: session.user.id },
     include: {
       customer: true,
+      items: true,
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: { updatedAt: "desc" },
   });
 
   return NextResponse.json(jobs);

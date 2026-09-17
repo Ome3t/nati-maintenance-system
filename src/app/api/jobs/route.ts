@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const status = searchParams.get("status");
+
+  const where: any = {};
+  if (status) where.status = status;
+
   const jobs = await prisma.job.findMany({
+    where,
     include: {
       customer: true,
       technician: true,
       createdBy: true,
+      items: true,
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: { createdAt: "desc" },
   });
 
   return NextResponse.json(jobs);
