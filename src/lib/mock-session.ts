@@ -9,10 +9,9 @@ export type CurrentUser = {
   }
   
   export async function getCurrentUser(): Promise<CurrentUser | null> {
-    // 👇 Change this line to "CASHIER" or "TECHNICIAN" to test the other views.
     return {
-      id: "mock-user-1",
+      id: "mock-user-2",
       fullName: "Abebe Tesfaye",
-      role: "MANAGER",
+      role: "CASHIER",
     }
   }

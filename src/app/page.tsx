@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/mock-session"
 
@@ -12,14 +11,9 @@ export default async function Home() {
   const roleRoutes = {
     MANAGER: "/manager",
     CASHIER: "/cashier",
-    TECHNICIAN: "/technician",
-  } as const
+    PHONE_TECHNICIAN: "/technician",
+    COMPUTER_TECHNICIAN: "/technician",
+  }
 
   redirect(roleRoutes[user.role])
-=======
-﻿import { redirect } from "next/navigation";
-
-export default function Home() {
-  redirect("/login");
->>>>>>> main
 }
