@@ -4,18 +4,19 @@ import { auth } from "@/lib/auth";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const body = await request.json();
     const amount = Number(body.amount);
 
-    const job = await prisma.job.findUnique({ where: { id: params.id } });
+    const job = await prisma.job.findUnique({ where: { id } });
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
@@ -28,21 +29,19 @@ export async function POST(
     if (newPaid >= total) paymentStatus = "PAID";
     else if (newPaid > 0) paymentStatus = "PARTIALLY_PAID";
 
-    // Create payment record
     await prisma.payment.create({
       data: {
         paymentNumber: `PAY-${Date.now().toString().slice(-8)}`,
         customerId: job.customerId,
-        jobId: job.id,
+        jobId: id,
         receivedById: session.user.id,
         amount,
         method: body.method || "CASH",
       },
     });
-
-    // Update job
+    
     const updated = await prisma.job.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         paidAmount: newPaid,
         remainingAmount: remaining > 0 ? remaining : 0,

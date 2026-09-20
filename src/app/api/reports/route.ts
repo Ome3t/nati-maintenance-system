@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   let startDate: Date;
   let endDate: Date = new Date();
-  let groupBy: "hour" | "day" | "week" | "month" = "day";
+  let groupBy: "hour" | "day" | "month" = "day";
 
   if (fromParam && toParam) {
     startDate = new Date(fromParam);
@@ -44,7 +44,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Fetch sales, jobs, payments, expenses in range
   const [sales, jobs, payments, expenses] = await Promise.all([
     prisma.sale.findMany({
       where: { createdAt: { gte: startDate, lte: endDate } },
@@ -64,7 +63,6 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
-  // Group by time
   const chartMap: Record<string, { label: string; revenue: number; sales: number; jobs: number; expenses: number }> = {};
 
   const getKey = (date: Date) => {
@@ -74,11 +72,6 @@ export async function GET(request: NextRequest) {
     }
     if (groupBy === "day") {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    }
-    if (groupBy === "week") {
-      const start = new Date(d);
-      start.setDate(d.getDate() - d.getDay());
-      return `${start.getFullYear()}-W${String(Math.ceil((start.getDate()) / 7)).padStart(2, "0")}`;
     }
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
@@ -125,14 +118,12 @@ export async function GET(request: NextRequest) {
     .sort()
     .map((k) => chartMap[k]);
 
-  // Totals
   const totalRevenue = sales.reduce((sum, s) => sum + Number(s.total), 0);
   const totalJobs = jobs.length;
   const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
   const totalPayments = payments.reduce((sum, p) => sum + Number(p.amount), 0);
   const profit = totalRevenue - totalExpenses;
 
-  // Payment methods breakdown
   const methodTotals: Record<string, number> = {};
   payments.forEach((p) => {
     methodTotals[p.method] = (methodTotals[p.method] || 0) + Number(p.amount);
@@ -142,7 +133,6 @@ export async function GET(request: NextRequest) {
     amount,
   }));
 
-  // Expense breakdown by category
   const categoryTotals: Record<string, number> = {};
   expenses.forEach((e) => {
     categoryTotals[e.category] = (categoryTotals[e.category] || 0) + Number(e.amount);
@@ -152,7 +142,6 @@ export async function GET(request: NextRequest) {
     amount,
   }));
 
-  // Jobs by status
   const jobStatusTotals: Record<string, number> = {};
   jobs.forEach((j) => {
     jobStatusTotals[j.status] = (jobStatusTotals[j.status] || 0) + 1;
@@ -162,7 +151,6 @@ export async function GET(request: NextRequest) {
     count,
   }));
 
-  // Top products
   const topProductsRaw = await prisma.saleItem.groupBy({
     by: ["productId"],
     _sum: { quantity: true, total: true },

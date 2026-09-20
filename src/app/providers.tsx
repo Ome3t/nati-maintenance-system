@@ -1,7 +1,15 @@
-"use client";
+"use client"
 
-import { SessionProvider } from "next-auth/react";
+import { SessionProvider } from "next-auth/react"
 
-export function Providers({ children }: { children: React.ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+export default function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <SessionProvider 
+      // These settings stop NextAuth from spamming the server on every click
+      refetchOnWindowFocus={false} 
+      refetchInterval={0}
+    >
+      {children}
+    </SessionProvider>
+  )
 }

@@ -3,8 +3,31 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import {
+  Loader2, Save, User, Wrench, Banknote, CreditCard, Smartphone as MobileMoney, Wallet,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { AnimatedCounter } from "@/components/shared/animated-counter";
+import { cn } from "@/lib/utils";
+
+const selectClasses =
+  "flex h-9 w-full rounded-md border border-border/50 bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+const priorities = [
+  { key: "LOW", label: "Low", active: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-300 border-zinc-500/40 shadow-sm" },
+  { key: "MEDIUM", label: "Medium", active: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/40 shadow-sm" },
+  { key: "HIGH", label: "High", active: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/40 shadow-sm" },
+  { key: "URGENT", label: "Urgent", active: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/40 shadow-sm" },
+];
+
+const paymentMethods = [
+  { key: "CASH", label: "Cash", Icon: Banknote },
+  { key: "BANK_TRANSFER", label: "Bank", Icon: CreditCard },
+  { key: "MOBILE_MONEY", label: "Mobile", Icon: MobileMoney },
+];
 
 export default function NewJobPage() {
   const { data: session } = useSession();
@@ -26,39 +49,40 @@ export default function NewJobPage() {
   const [paymentMethod, setPaymentMethod] = useState("CASH");
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+
+  const sessionLoading = session === undefined;
+  const userRole = (session?.user as any)?.role;
+  const userId = (session?.user as any)?.id;
 
   useEffect(() => {
     fetch("/api/technicians")
       .then((r) => r.json())
       .then((data) => {
-        setTechnicians(data);
-        // Auto-select self if technician
-        if (session?.user?.role === "TECHNICIAN" && session?.user?.id) {
-          setSelectedTechnician(session.user.id);
+        setTechnicians(Array.isArray(data) ? data : []);
+        if (userRole === "TECHNICIAN" && userId) {
+          setSelectedTechnician(userId);
         }
       })
       .catch(() => {});
-  }, [session]);
+  }, [session, userRole, userId]);
+
+  const labor = parseFloat(laborCharge) || 0;
+  const paid = parseFloat(paidAmount) || 0;
+  const balance = Math.max(0, labor - paid);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
 
     if (!customerName || !customerPhone || !deviceType || !problem) {
-      setError("Please fill in all required fields");
-      setLoading(false);
+      toast.error("Please fill in all required fields");
       return;
     }
-
     if (!selectedTechnician) {
-      setError("Please select a technician");
-      setLoading(false);
+      toast.error("Please select a technician");
       return;
     }
 
+    setLoading(true);
     try {
       const response = await fetch("/api/jobs", {
         method: "POST",
@@ -72,10 +96,10 @@ export default function NewJobPage() {
           problem,
           priority,
           technicianId: selectedTechnician,
-          createdById: session?.user?.id,
-          laborCharge: parseFloat(laborCharge) || 0,
+          createdById: userId,
+          laborCharge: labor,
           paymentMethod,
-          paidAmount: parseFloat(paidAmount) || 0,
+          paidAmount: paid,
           status: "ASSIGNED",
         }),
       });
@@ -86,111 +110,66 @@ export default function NewJobPage() {
       }
 
       const job = await response.json();
-      setSuccess("Job " + job.jobNumber + " created successfully");
+      toast.success(`Job ${job.jobNumber} created successfully`);
 
       setTimeout(() => {
-        // Redirect based on role
-        if (session?.user?.role === "TECHNICIAN") {
+        if (userRole === "TECHNICIAN") {
           router.push("/my-jobs");
         } else {
           router.push("/jobs");
         }
-      }, 1200);
+      }, 1000);
     } catch (err: any) {
-      setError(err.message || "Failed to create job");
-    } finally {
+      toast.error(err.message || "Failed to create job");
       setLoading(false);
     }
   };
 
+  const backHref = userRole === "TECHNICIAN" ? "/my-jobs" : "/jobs";
+
   return (
-    <div className="max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <Link
-          href={session?.user?.role === "TECHNICIAN" ? "/my-jobs" : "/jobs"}
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 mb-4"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Link>
-        <h1 className="text-xl font-bold text-slate-900">Create Repair Job</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Register a new device for repair
-        </p>
+    <div className="max-w-3xl mx-auto space-y-6 animate-page-enter">
+      <nav className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link href="/" className="hover:text-foreground transition-colors">Dashboard</Link>
+        <span>/</span>
+        <Link href={backHref} className="hover:text-foreground transition-colors">Jobs</Link>
+        <span>/</span>
+        <span className="text-foreground font-medium">New Job</span>
+      </nav>
+
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Create Repair Job</h1>
+        <p className="text-xs text-muted-foreground mt-1">Register a new device for repair and assign it to a technician.</p>
       </div>
 
-      {success && (
-        <div className="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-700">
-          ✅ {success}
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Customer Information */}
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Customer Information
-            </h2>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="bg-card border border-border/50 shadow-sm rounded-xl overflow-hidden transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <User className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">Customer Information</h2>
           </div>
-          <div className="p-5 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Customer Name *
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Full name"
-                  required
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="0911223344"
-                  required
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-              </div>
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer Name *</label>
+              <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Full name" className="bg-background/50 border-border/50" required />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Phone Number *</label>
+              <Input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="0911223344" className="bg-background/50 border-border/50" required />
             </div>
           </div>
         </div>
 
-        {/* Device Information */}
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Device & Problem
-            </h2>
+        <div className="bg-card border border-border/50 shadow-sm rounded-xl overflow-hidden transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">Device & Problem</h2>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Device Type *
-                </label>
-                <select
-                  value={deviceType}
-                  onChange={(e) => setDeviceType(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                >
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Device Type *</label>
+                <select value={deviceType} onChange={(e) => setDeviceType(e.target.value)} className={selectClasses} required>
                   <option value="">Select</option>
                   <option value="Phone">Phone</option>
                   <option value="Tablet">Tablet</option>
@@ -199,63 +178,44 @@ export default function NewJobPage() {
                   <option value="Other">Other</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Model
-                </label>
-                <input
-                  type="text"
-                  value={deviceModel}
-                  onChange={(e) => setDeviceModel(e.target.value)}
-                  placeholder="Samsung A24"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</label>
+                <Input value={deviceModel} onChange={(e) => setDeviceModel(e.target.value)} placeholder="Samsung A24" className="bg-background/50 border-border/50" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Serial / IMEI
-                </label>
-                <input
-                  type="text"
-                  value={serialNumber}
-                  onChange={(e) => setSerialNumber(e.target.value)}
-                  placeholder="Optional"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Serial / IMEI</label>
+                <Input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} placeholder="Optional" className="bg-background/50 border-border/50 font-mono" />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                Problem Description *
-              </label>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Problem Description *</label>
               <textarea
                 value={problem}
                 onChange={(e) => setProblem(e.target.value)}
                 placeholder="Describe the issue..."
                 rows={3}
                 required
-                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+                className="flex w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                Priority
-              </label>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Priority</label>
               <div className="grid grid-cols-4 gap-2">
-                {["LOW", "MEDIUM", "HIGH", "URGENT"].map((p) => (
+                {priorities.map((p) => (
                   <button
-                    key={p}
+                    key={p.key}
                     type="button"
-                    onClick={() => setPriority(p)}
-                    className={`py-2 text-xs font-medium rounded-md border transition-colors ${
-                      priority === p
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white text-slate-700 border-slate-200 hover:border-slate-900"
-                    }`}
+                    onClick={() => setPriority(p.key)}
+                    className={cn(
+                      "py-2 text-xs font-medium rounded-xl border transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]",
+                      priority === p.key
+                        ? p.active
+                        : "bg-transparent text-muted-foreground border-border/50 hover:text-foreground"
+                    )}
                   >
-                    {p}
+                    {p.label}
                   </button>
                 ))}
               </div>
@@ -263,103 +223,87 @@ export default function NewJobPage() {
           </div>
         </div>
 
-        {/* Technician */}
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Assign Technician
-            </h2>
+        <div className="bg-card border border-border/50 shadow-sm rounded-xl overflow-hidden transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">Assign Technician</h2>
           </div>
-          <div className="p-5">
-            <select
-              value={selectedTechnician}
-              onChange={(e) => setSelectedTechnician(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-            >
+          <div className="p-5 space-y-2">
+            <select value={selectedTechnician} onChange={(e) => setSelectedTechnician(e.target.value)} className={selectClasses} required>
               <option value="">Select technician</option>
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} {t.phone ? "— " + t.phone : ""}
+                  {t.name} {t.phone ? `— ${t.phone}` : ""}
                 </option>
               ))}
             </select>
+            {technicians.length === 0 && (
+              <p className="text-xs text-muted-foreground">No technicians found yet.</p>
+            )}
           </div>
         </div>
 
-        {/* Payment */}
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Payment (Optional)
-            </h2>
+        <div className="bg-card border border-border/50 shadow-sm rounded-xl overflow-hidden transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">Payment (Optional)</h2>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Estimated Charge (ETB)
-                </label>
-                <input
-                  type="number"
-                  value={laborCharge}
-                  onChange={(e) => setLaborCharge(e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Estimated Charge (ETB)</label>
+                <Input type="number" value={laborCharge} onChange={(e) => setLaborCharge(e.target.value)} placeholder="0" min="0" className="bg-background/50 border-border/50" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Advance Paid (ETB)
-                </label>
-                <input
-                  type="number"
-                  value={paidAmount}
-                  onChange={(e) => setPaidAmount(e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Advance Paid (ETB)</label>
+                <Input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} placeholder="0" min="0" className="bg-background/50 border-border/50" />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                Payment Method
-              </label>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</label>
               <div className="grid grid-cols-3 gap-2">
-                {[
-                  { key: "CASH", label: "Cash" },
-                  { key: "BANK_TRANSFER", label: "Bank" },
-                  { key: "MOBILE_MONEY", label: "Mobile" },
-                ].map((m) => (
+                {paymentMethods.map(({ key, label, Icon }) => (
                   <button
-                    key={m.key}
+                    key={key}
                     type="button"
-                    onClick={() => setPaymentMethod(m.key)}
-                    className={`py-2 text-sm font-medium rounded-md border transition-colors ${
-                      paymentMethod === m.key
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white text-slate-700 border-slate-200 hover:border-slate-900"
-                    }`}
+                    onClick={() => setPaymentMethod(key)}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 py-3 rounded-xl border text-xs font-medium transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]",
+                      paymentMethod === key
+                        ? "bg-primary text-primary-foreground border-primary shadow-md"
+                        : "border-border/50 text-muted-foreground hover:border-emerald-500/30 hover:text-foreground"
+                    )}
                   >
-                    {m.label}
+                    <Icon className="h-5 w-5" />
+                    {label}
                   </button>
                 ))}
               </div>
             </div>
+
+            <div className="rounded-xl border border-border bg-muted/30 p-4 flex items-center justify-between transition-colors hover:bg-muted/50">
+              <span className="text-sm text-muted-foreground">Balance due after advance</span>
+              <span className="text-lg font-bold text-foreground">
+                <AnimatedCounter value={balance} suffix=" ETB" />
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-3 bg-slate-900 text-white text-sm font-medium rounded-md hover:bg-slate-800 disabled:opacity-50"
-        >
-          {loading ? "Creating..." : "Create Job"}
-        </button>
+        <Button type="submit" disabled={loading || sessionLoading} className="w-full gap-2 transition-all hover:scale-[1.01] active:scale-[0.99]">
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Creating Job...
+            </>
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              Create Job
+            </>
+          )}
+        </Button>
       </form>
     </div>
   );

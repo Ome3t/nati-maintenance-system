@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const jobs = await prisma.job.findMany({
-      where: { customerId: params.id },
+      where: { customerId: id },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(jobs);

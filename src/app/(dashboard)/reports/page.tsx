@@ -107,8 +107,7 @@ export default function ReportsPage() {
       rows.push([p.name, p.sku, p.quantity, p.revenue]);
     });
 
-    const csvContent = rows.map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const csvContent = rows.map((row) => row.map((cell: any) => `"${cell}"`).join(",")).join("\n");    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -364,7 +363,7 @@ export default function ReportsPage() {
                     label={(entry: any) => `${entry.method}: ${Number(entry.amount).toLocaleString()}`}
                     labelLine={false}
                   >
-                    {paymentMethods.map((_, idx) => (
+                    {paymentMethods.map((_: any, idx: number) => (
                       <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                     ))}
                   </Pie>
@@ -402,7 +401,7 @@ export default function ReportsPage() {
                     label={(entry: any) => `${entry.category}`}
                     labelLine={false}
                   >
-                    {expenseCategories.map((_, idx) => (
+                    {expenseCategories.map((_: any, idx: number) => (
                       <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                     ))}
                   </Pie>

@@ -3,11 +3,13 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> } // 1. Promise<> fix for Next.js 16
 ) {
   try {
+    const { id } = await params; // 2. Unwrap the Promise
+
     const sale = await prisma.sale.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         customer: true,
         cashier: { select: { name: true } },
@@ -16,6 +18,7 @@ export async function GET(
             product: { select: { name: true, sku: true } },
           },
         },
+        payments: true, // 3. Added: needed for the Payment Receipt type
       },
     });
 
@@ -25,6 +28,7 @@ export async function GET(
 
     return NextResponse.json(sale);
   } catch (error) {
+    console.error("Error fetching sale:", error);
     return NextResponse.json(
       { error: "Failed to fetch sale" },
       { status: 500 }

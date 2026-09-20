@@ -3,9 +3,6 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const categories = await prisma.category.findMany({
-    include: {
-      _count: { select: { products: true } },
-    },
     orderBy: { name: "asc" },
   });
   return NextResponse.json(categories);
@@ -14,23 +11,21 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    if (!body.name || !body.name.trim()) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+    const name = body.name.trim();
+
+    // If the category already exists, reuse it (no duplicates)
+    const existing = await prisma.category.findUnique({ where: { name } });
+    if (existing) return NextResponse.json(existing);
+
     const category = await prisma.category.create({
-      data: {
-        name: body.name,
-        description: body.description || null,
-      },
+      data: { name, description: body.description || null },
     });
     return NextResponse.json(category);
-  } catch (error: any) {
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: "Category already exists" },
-        { status: 400 }
-      );
-    }
-    return NextResponse.json(
-      { error: "Failed to create category" },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error("Error creating category:", error);
+    return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
   }
 }

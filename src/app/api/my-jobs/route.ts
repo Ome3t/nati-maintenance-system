@@ -5,8 +5,10 @@ import { auth } from "@/lib/auth";
 export async function GET() {
   const session = await auth();
 
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Safety: no session OR no user id → return an empty list (never an error object,
+  // and never accidentally return all jobs if id is undefined)
+  if (!session?.user?.id) {
+    return NextResponse.json([]);
   }
 
   const jobs = await prisma.job.findMany({
