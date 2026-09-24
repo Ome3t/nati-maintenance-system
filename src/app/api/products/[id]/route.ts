@@ -10,9 +10,11 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // ✅ Captured once so TypeScript knows it's a definite string
+    const userId: string = session.user.id;
 
     const { id } = await params;
     const body = await request.json();
@@ -22,6 +24,14 @@ export async function PATCH(
     if (body.name !== undefined) data.name = body.name;
     if (body.sellingPrice !== undefined) data.sellingPrice = body.sellingPrice;
 
+    const oldProduct = await prisma.product.findUnique({
+      where: { id },
+      select: { currentStock: true, minimumStock: true },
+    });
+    if (!oldProduct) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
     const product = await prisma.product.update({
       where: { id },
       data,
@@ -29,36 +39,33 @@ export async function PATCH(
 
     // If stock was manually adjusted, log it
     if (body.currentStock !== undefined) {
-      const oldProduct = await prisma.product.findUnique({
-        where: { id },
-        select: { currentStock: true },
+      const stockChange = Number(body.currentStock) - Number(oldProduct.currentStock);
+
+      await prisma.inventoryMovement.create({
+        data: {
+          productId: id,
+          type: "ADJUSTMENT",
+          quantity: stockChange,
+          createdBy: userId,
+          notes: typeof body.notes === "string" ? body.notes : "Manual stock adjustment",
+        },
       });
 
-      if (oldProduct) {
-        const stockChange = body.currentStock - oldProduct.currentStock;
+      await logActivity({
+        userId,
+        action: `Stock adjusted: ${product.name} (${stockChange > 0 ? "+" : ""}${stockChange} units)`,
+        module: "INVENTORY",
+        recordId: id,
+        details: {
+          oldStock: Number(oldProduct.currentStock),
+          newStock: Number(body.currentStock),
+          change: stockChange,
+        },
+      });
 
-        await prisma.inventoryMovement.create({
-          data: {
-            productId: id,
-            type: "ADJUSTMENT",
-            quantity: stockChange,
-            createdBy: session.user.id,
-            notes: body.notes || "Manual stock adjustment",
-          },
-        });
-
-        await logActivity({
-          userId: session.user.id,
-          action: `Stock adjusted: ${product.name} (${stockChange > 0 ? "+" : ""}${stockChange} units)`,
-          module: "INVENTORY",
-          recordId: id,
-          details: { oldStock: oldProduct.currentStock, newStock: body.currentStock, change: stockChange },
-        });
-
-        // Check if product is now low stock
-        if (product.currentStock <= product.minimumStock) {
-          await notifyLowStock(product.name, product.currentStock, product.minimumStock);
-        }
+      // Check if product is now low stock
+      if (Number(product.currentStock) <= Number(product.minimumStock)) {
+        await notifyLowStock(product.name, Number(product.currentStock), Number(product.minimumStock));
       }
     }
 
