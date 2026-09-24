@@ -1,5 +1,5 @@
 import { Suspense } from "react"
-import { getCustomers, getCustomerDetail } from "@/actions/customers"
+import { getCustomers } from "@/actions/customers"
 import { Panel } from "@/components/shared/panel"
 import { CustomerDetailDrawer } from "@/components/shared/customer-detail-drawer"
 import { CustomerSearch } from "@/components/shared/customer-search"
@@ -13,7 +13,6 @@ interface CustomersPageProps {
 export default async function CustomersPage({ searchParams }: CustomersPageProps) {
   const { customer: selectedCustomerId, q: searchQuery } = await searchParams
   const customers = await getCustomers(searchQuery)
-  const selectedCustomer = selectedCustomerId ? await getCustomerDetail(selectedCustomerId) : null
 
   return (
     <div className="space-y-6 animate-page-enter">
@@ -69,8 +68,9 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
         </div>
       </Panel>
 
+      {/* ✅ Drawer now opens instantly and fetches its own data */}
       <Suspense fallback={null}>
-        <CustomerDetailDrawer customer={selectedCustomer} isOpen={!!selectedCustomerId} />
+        <CustomerDetailDrawer customerId={selectedCustomerId ?? null} />
       </Suspense>
     </div>
   )

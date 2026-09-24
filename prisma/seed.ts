@@ -4,8 +4,9 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding database...');
+  console.log('🌱 Seeding database...');
 
+  // 1. Create Users (Safe to run multiple times)
   const adminPassword = await bcrypt.hash('admin123', 10);
   const cashierPassword = await bcrypt.hash('cashier123', 10);
   const technicianPassword = await bcrypt.hash('technician123', 10);
@@ -18,6 +19,7 @@ async function main() {
       name: 'Owner Admin',
       password: adminPassword,
       role: 'OWNER',
+      isActive: true, // Ensure the account is active
     },
   });
 
@@ -29,6 +31,7 @@ async function main() {
       name: 'Cashier User',
       password: cashierPassword,
       role: 'CASHIER',
+      isActive: true,
     },
   });
 
@@ -40,12 +43,12 @@ async function main() {
       name: 'Technician User',
       password: technicianPassword,
       role: 'TECHNICIAN',
+      isActive: true,
     },
   });
+  console.log('✅ Users created');
 
-  console.log('Users created');
-
-  // Create Categories
+  // 2. Create Categories (Safe to run multiple times)
   const categories = [
     'Phone Parts',
     'Computer Parts',
@@ -61,16 +64,15 @@ async function main() {
       create: { name: cat },
     });
   }
+  console.log('✅ Categories created');
 
-  console.log('Categories created');
-
-  // Create Products
+  // 3. Create Products (Safe to run multiple times)
   const products = [
-    { name: 'iPhone Screen', sku: 'SCR-IP-001', purchasePrice: 1500, sellingPrice: 2500, currentStock: 10 },
-    { name: 'Samsung Screen', sku: 'SCR-SM-001', purchasePrice: 1200, sellingPrice: 2000, currentStock: 15 },
-    { name: 'Charging Port', sku: 'PRT-CHG-001', purchasePrice: 200, sellingPrice: 500, currentStock: 50 },
-    { name: 'Phone Battery', sku: 'BAT-PH-001', purchasePrice: 400, sellingPrice: 800, currentStock: 30 },
-    { name: 'USB Cable', sku: 'CBL-USB-001', purchasePrice: 50, sellingPrice: 150, currentStock: 100 },
+    { name: 'iPhone Screen', sku: 'SCR-IP-001', purchasePrice: 1500, sellingPrice: 2500, currentStock: 10, minimumStock: 2 },
+    { name: 'Samsung Screen', sku: 'SCR-SM-001', purchasePrice: 1200, sellingPrice: 2000, currentStock: 15, minimumStock: 2 },
+    { name: 'Charging Port', sku: 'PRT-CHG-001', purchasePrice: 200, sellingPrice: 500, currentStock: 50, minimumStock: 5 },
+    { name: 'Phone Battery', sku: 'BAT-PH-001', purchasePrice: 400, sellingPrice: 800, currentStock: 30, minimumStock: 5 },
+    { name: 'USB Cable', sku: 'CBL-USB-001', purchasePrice: 50, sellingPrice: 150, currentStock: 100, minimumStock: 10 },
   ];
 
   for (const product of products) {
@@ -80,10 +82,9 @@ async function main() {
       create: product,
     });
   }
+  console.log('✅ Products created');
 
-  console.log('Products created');
-
-  // Create Customers
+  // 4. Create Customers (Using upsert by phone to avoid duplicates)
   const customers = [
     { name: 'Abebe Kebede', phone: '0910111111' },
     { name: 'Sara Tesfaye', phone: '0910222222' },
@@ -91,13 +92,16 @@ async function main() {
   ];
 
   for (const customer of customers) {
-    await prisma.customer.create({
-      data: customer,
-    });
+    // Check if customer exists by phone, if not create
+    const existing = await prisma.customer.findFirst({ where: { phone: customer.phone } });
+    if (!existing) {
+      await prisma.customer.create({ data: customer });
+    }
   }
+  console.log('✅ Customers created');
 
-  console.log('Customers created');
-  console.log('---');
+  console.log('\n---');
+  console.log('🎉 Seed complete!');
   console.log('Demo Accounts:');
   console.log('Admin: admin@natimaintenance.com / admin123');
   console.log('Cashier: cashier@natimaintenance.com / cashier123');
@@ -106,7 +110,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Seed failed:', e);
     process.exit(1);
   })
   .finally(async () => {

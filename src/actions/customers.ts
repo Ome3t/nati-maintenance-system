@@ -1,41 +1,157 @@
 "use server"
 
-import type { Customer, CustomerDetail } from "../../domain/types/customer"
+import { prisma } from "@/lib/prisma"
 
-// TEMPORARY MOCK DATA — Backend will replace this with Prisma queries
-const MOCK_CUSTOMERS: Customer[] = [
-  { id: "c1", name: "Fikru Alemu", phone: "+251 911 234 567", totalJobs: 4, lastServiceDate: "2 days ago", lastServiceDevice: "iPhone 12" },
-  { id: "c2", name: "Bethelhem T.", phone: "+251 922 345 678", totalJobs: 1, lastServiceDate: "1 week ago", lastServiceDevice: "Dell Latitude" },
-  { id: "c3", name: "Kebede W.", phone: "+251 933 456 789", totalJobs: 7, lastServiceDate: "3 days ago", lastServiceDevice: "Samsung A14" },
-  { id: "c4", name: "Hanna M.", phone: "+251 944 567 890", totalJobs: 2, lastServiceDate: "1 month ago", lastServiceDevice: "HP Pavilion" },
-]
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
 
-const MOCK_CUSTOMER_DETAILS: Record<string, CustomerDetail> = {
-  "c1": {
-    id: "c1", name: "Fikru Alemu", phone: "+251 911 234 567", totalJobs: 4, lastServiceDate: "2 days ago", lastServiceDevice: "iPhone 12",
-    jobs: [
-      { id: "j1042", jobNumber: 1042, deviceName: "iPhone 12", reportedProblem: "Screen cracked, touch not responding", status: "IN_PROGRESS", createdAt: "2 days ago", totalCost: 4500, paymentStatus: "UNPAID" },
-      { id: "j1015", jobNumber: 1015, deviceName: "iPhone 12", reportedProblem: "Battery replacement", status: "DELIVERED", createdAt: "3 months ago", totalCost: 1200, paymentStatus: "PAID" },
-    ]
-  },
-  "c2": {
-    id: "c2", name: "Bethelhem T.", phone: "+251 922 345 678", totalJobs: 1, lastServiceDate: "1 week ago", lastServiceDevice: "Dell Latitude",
-    jobs: [
-      { id: "j1041", jobNumber: 1041, deviceName: "Dell Latitude", reportedProblem: "Won't turn on, possible motherboard issue", status: "WAITING", createdAt: "1 week ago", totalCost: 0, paymentStatus: "UNPAID" },
-    ]
+export async function getCustomers(searchQuery?: string): Promise<any[]> {
+  try {
+    const where: any = {}
+
+    if (searchQuery) {
+      where.OR = [
+        { name: { contains: searchQuery, mode: "insensitive" } },
+        { phone: { contains: searchQuery, mode: "insensitive" } },
+        { email: { contains: searchQuery, mode: "insensitive" } },
+      ]
+    }
+
+    const customers = await prisma.customer.findMany({
+      where,
+      include: {
+        jobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true, deviceType: true, deviceModel: true },
+        },
+        _count: { select: { jobs: true } },
+      },
+      orderBy: { name: "asc" },
+      take: 100,
+    })
+
+    return customers.map((customer) => ({
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone || "N/A",
+      email: customer.email || "N/A",
+      totalJobs: customer._count.jobs,
+      lastServiceDate: customer.jobs[0]?.createdAt ? fmtDate(customer.jobs[0].createdAt) : "N/A",
+      lastServiceDevice: customer.jobs[0]
+        ? `${customer.jobs[0].deviceType} ${customer.jobs[0].deviceModel || ""}`.trim()
+        : "N/A",
+    }))
+  } catch (error) {
+    console.error("Error fetching customers:", error)
+    return []
   }
 }
 
-export async function getCustomers(searchQuery?: string): Promise<Customer[]> {
-  // TODO: Backend will implement Prisma: db.customer.findMany({ where: { name: { contains: searchQuery } } })
-  if (!searchQuery) return MOCK_CUSTOMERS
-  return MOCK_CUSTOMERS.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    c.phone.includes(searchQuery)
-  )
-}
+export async function getCustomerDetail(customerId: string): Promise<any | null> {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        // Capped lists keep the payload small → drawer opens fast
+        jobs: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          include: {
+            technician: { select: { name: true } },
+            items: { select: { name: true, quantity: true, unitCost: true, total: true } },
+          },
+        },
+        sales: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          include: {
+            cashier: { select: { name: true } },
+            items: { include: { product: { select: { name: true } } } },
+          },
+        },
+        payments: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          include: { receivedBy: { select: { name: true } } },
+        },
+      },
+    })
 
-export async function getCustomerDetail(id: string): Promise<CustomerDetail | null> {
-  // TODO: Backend will implement Prisma: db.customer.findUnique({ where: { id }, include: { jobs: true } })
-  return MOCK_CUSTOMER_DETAILS[id] || null
+    if (!customer) return null
+
+    const totalSpent =
+      customer.jobs.reduce((sum, job) => sum + Number(job.paidAmount), 0) +
+      customer.sales.reduce((sum, sale) => sum + Number(sale.paidAmount), 0)
+
+    const lastJob = customer.jobs[0]
+
+    return {
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone || "N/A",
+      email: customer.email || "N/A",
+      address: customer.address || "N/A",
+      notes: customer.notes || "",
+      // ✅ FIXED: use 
+      totalJobs: customer.jobs.length,
+      totalSpent,
+      joinDate: customer.createdAt.toISOString(),
+      lastServiceDate: lastJob ? fmtDate(lastJob.createdAt) : "N/A",
+      lastServiceDevice: lastJob ? `${lastJob.deviceType} ${lastJob.deviceModel || ""}`.trim() : "N/A",
+
+      jobs: customer.jobs.map((job) => ({
+        id: job.id,
+        jobNumber: job.jobNumber,
+        deviceType: job.deviceType,
+        deviceModel: job.deviceModel || "N/A",
+        deviceName: `${job.deviceType} ${job.deviceModel || ""}`.trim(),
+        problem: job.problem,
+        reportedProblem: job.problem,
+        status: job.status,
+        paymentStatus: job.paymentStatus || "UNPAID",
+        totalCost: Number(job.total),
+        total: Number(job.total),
+        paidAmount: Number(job.paidAmount),
+        remainingAmount: Number(job.remainingAmount),
+        createdAt: job.createdAt.toISOString(),
+        technician: job.technician?.name || "Unassigned",
+        items: job.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          unitCost: Number(item.unitCost),
+          total: Number(item.total),
+        })),
+      })),
+
+      sales: customer.sales.map((sale) => ({
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        totalCost: Number(sale.total),
+        total: Number(sale.total),
+        paidAmount: Number(sale.paidAmount),
+        remainingAmount: Number(sale.remainingAmount),
+        createdAt: sale.createdAt.toISOString(),
+        cashier: sale.cashier?.name || "Unknown",
+        items: sale.items.map((item) => ({
+          productName: item.product?.name || "Item",
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          total: Number(item.total),
+        })),
+      })),
+
+      payments: customer.payments.map((payment) => ({
+        id: payment.id,
+        paymentNumber: payment.paymentNumber,
+        amount: Number(payment.amount),
+        method: payment.method,
+        createdAt: payment.createdAt.toISOString(),
+        receivedBy: payment.receivedBy?.name || "Unknown",
+      })),
+    }
+  } catch (error) {
+    console.error("Error fetching customer detail:", error)
+    return null
+  }
 }

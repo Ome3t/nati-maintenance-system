@@ -19,18 +19,26 @@ export default function JobReceiptPage() {
   const params = useParams();
   const router = useRouter();
   const [job, setJob] = useState<any>(null);
+  const [businessProfile, setBusinessProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState<ReceiptKind>("delivery");
   const { paper, setPaper, orders, moveSection, resetOrder } = useReceiptPrefs();
 
   useEffect(() => {
-    fetch(`/api/jobs/${params.id}`)
-      .then((r) => r.json())
-      .then((data) => { setJob(data); setLoading(false); })
+    Promise.all([
+      fetch(`/api/jobs/${params.id}`).then((r) => r.json()),
+      fetch("/api/settings/business-profile").then((r) => r.json()),
+    ])
+      .then(([jobData, profileData]) => {
+        setJob(jobData);
+        setBusinessProfile(profileData);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, [params.id]);
 
   const order = orders[kind] || DEFAULT_ORDERS[kind];
+
 
   return (
     <div className="space-y-6 animate-page-enter">
@@ -86,8 +94,14 @@ export default function JobReceiptPage() {
             <p className="text-sm">Job not found.</p>
           </div>
         ) : (
-          <ReceiptPreview kind={kind} paper={paper} order={order} job={job} />
-        )}
+        <ReceiptPreview 
+              kind={kind} 
+              paper={paper} 
+              order={order} 
+              job={job} 
+              businessProfile={businessProfile}
+            />        
+            )}
       </div>
 
       {/* Optional Section Rearranger */}

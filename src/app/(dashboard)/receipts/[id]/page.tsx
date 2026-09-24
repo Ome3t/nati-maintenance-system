@@ -19,14 +19,21 @@ export default function SaleReceiptPage() {
   const params = useParams();
   const router = useRouter();
   const [sale, setSale] = useState<any>(null);
+  const [businessProfile, setBusinessProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState<ReceiptKind>("sale");
   const { paper, setPaper, orders, moveSection, resetOrder } = useReceiptPrefs();
 
   useEffect(() => {
-    fetch(`/api/sales/${params.id}`)
-      .then((r) => r.json())
-      .then((data) => { setSale(data); setLoading(false); })
+    Promise.all([
+      fetch(`/api/sales/${params.id}`).then((r) => r.json()),
+      fetch("/api/settings/business-profile").then((r) => r.json()),
+    ])
+      .then(([saleData, profileData]) => {
+        setSale(saleData);
+        setBusinessProfile(profileData);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, [params.id]);
 
@@ -87,8 +94,13 @@ export default function SaleReceiptPage() {
             <p className="text-sm">Receipt not found.</p>
           </div>
         ) : (
-          <ReceiptPreview kind={kind} paper={paper} order={order} sale={sale} />
-        )}
+          <ReceiptPreview 
+                kind={kind} 
+                paper={paper} 
+                order={order} 
+                sale={sale} 
+                businessProfile={businessProfile}
+    />        )}
       </div>
 
       {/* Optional Section Rearranger */}

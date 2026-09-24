@@ -19,9 +19,16 @@ export default function SalesHistoryPage() {
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [preferences, setPreferences] = useState({
+    autoGenerateReceipts: true,
+  });
 
   useEffect(() => {
     fetchSales();
+    fetch("/api/settings/preferences")
+      .then((r) => r.json())
+      .then((data) => setPreferences(data))
+      .catch(() => {});
   }, []);
 
   const fetchSales = async () => {
@@ -379,11 +386,13 @@ export default function SalesHistoryPage() {
               </div>
 
               <div className="border-t border-border/50 p-4 bg-background">
-                <Link href={"/receipts/" + selectedSale.id} className="block">
-                  <Button className="w-full gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                    <Printer className="h-4 w-4" /> View Receipt / Print
-                  </Button>
-                </Link>
+                {preferences.autoGenerateReceipts && (
+                 <Link href={"/receipts/" + selectedSale.id} className="block">
+                   <Button className="w-full gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                   <Printer className="h-4 w-4" /> View Receipt / Print
+                </Button>
+              </Link>
+               )}
               </div>
             </div>
           )}

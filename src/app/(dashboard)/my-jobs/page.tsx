@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import {
-  Play, Check, Plus, Package, Ban, X, Trash2, Loader2, Copy, Wrench, Clock, FileText,
+  Play, Check, Plus, Package, Ban, Trash2, Loader2, Copy, Wrench, Clock, FileText, User, Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -13,7 +14,11 @@ import { StatCard } from "@/components/shared/stat-card";
 import { AnimatedCounter } from "@/components/shared/animated-counter";
 import { cn } from "@/lib/utils";
 
+const selectClasses =
+  "flex h-9 w-full rounded-md border border-border/50 bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
 export default function MyJobsPage() {
+  const { data: session } = useSession();
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ACTIVE");
@@ -27,15 +32,39 @@ export default function MyJobsPage() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Transfer states
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferTechId, setTransferTechId] = useState("");
+  const [transferNote, setTransferNote] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [allTechnicians, setAllTechnicians] = useState<any[]>([]);
+
   useEffect(() => {
     fetchMyJobs();
+    fetch("/api/technicians")
+      .then((r) => r.json())
+      .then((data) => setAllTechnicians(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }, []);
+
+  /* ✅ EDIT RULES:
+     - Editable while: IN_PROGRESS, WAITING_FOR_PARTS, READY_FOR_PICKUP
+     - Only by the technician who currently owns (locked to) the job
+     - NEVER once any payment has been collected */
+  const paymentCollectedOf = (job: any) =>
+    Number(job?.paidAmount || 0) > 0 || job?.paymentStatus === "PAID" || job?.paymentStatus === "PARTIALLY_PAID";
+
+  const canEditJob = (job: any) =>
+    !!job &&
+    ["IN_PROGRESS", "WAITING_FOR_PARTS", "READY_FOR_PICKUP"].includes(job.status) &&
+    job.technician?.id === session?.user?.id &&
+    !paymentCollectedOf(job);
 
   const fetchMyJobs = async () => {
     try {
       const res = await fetch("/api/my-jobs");
       const data = await res.json();
-      setJobs(Array.isArray(data) ? data : []); // crash-proof
+      setJobs(Array.isArray(data) ? data : []);
     } catch (error) {
       toast.error("Failed to load your jobs");
     } finally {
@@ -55,6 +84,9 @@ export default function MyJobsPage() {
     setMaterials(job.items || []);
     setLaborCharge(String(job.laborCharge || ""));
     setDiagnosis(job.diagnosis || "");
+    setShowTransfer(false);
+    setTransferTechId("");
+    setTransferNote("");
   };
 
   const addMaterial = () => {
@@ -76,6 +108,14 @@ export default function MyJobsPage() {
 
   const saveJob = async (markDone: boolean = false) => {
     if (!selectedJob) return;
+    if (!canEditJob(selectedJob)) {
+      toast.error("This job can no longer be updated");
+      return;
+    }
+    if (markDone && grandTotal <= 0) {
+      toast.error("Set a labor charge or add materials before sending to the cashier");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/jobs/${selectedJob.id}`, {
@@ -99,14 +139,15 @@ export default function MyJobsPage() {
           toast.success(`Job #${selectedJob.jobNumber} sent to cashier for payment`);
           setSelectedJob(null);
         } else {
-          toast.success("Progress saved");
+          toast.success(selectedJob.status === "READY_FOR_PICKUP" ? "Updates saved" : "Progress saved");
           const updated = await res.json();
           setSelectedJob(updated);
           setMaterials(updated.items || []);
         }
         await fetchMyJobs();
       } else {
-        toast.error("Failed to save job");
+        const err = await res.json();
+        toast.error(err.error || "Failed to save job");
       }
     } catch (error) {
       toast.error("Failed to save job");
@@ -117,20 +158,61 @@ export default function MyJobsPage() {
 
   const updateStatus = async (jobId: string, newStatus: string) => {
     try {
+      const payload: any = { status: newStatus };
+      if (newStatus === "IN_PROGRESS" && session?.user?.id) {
+        payload.technicianId = session.user.id;
+      }
+
       const res = await fetch(`/api/jobs/${jobId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(payload),
       });
+
       if (res.ok) {
         toast.success(`Status updated: ${newStatus.replace(/_/g, " ").toLowerCase()}`);
-        fetchMyJobs();
-        if (selectedJob?.id === jobId) setSelectedJob({ ...selectedJob, status: newStatus });
+        await fetchMyJobs();
+        if (selectedJob?.id === jobId) {
+          const updated = { ...selectedJob, status: newStatus };
+          if (payload.technicianId) {
+            updated.technician = { id: payload.technicianId, name: (session?.user as any)?.name || selectedJob?.technician?.name };
+          }
+          setSelectedJob(updated);
+        }
       } else {
-        toast.error("Failed to update status");
+        const err = await res.json();
+        toast.error(err.error || "Failed to update status");
       }
     } catch (error) {
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleTransfer = async () => {
+    if (!transferTechId) { toast.error("Select a technician"); return; }
+    setTransferring(true);
+    try {
+      const res = await fetch(`/api/jobs/${selectedJob.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transferToTechnicianId: transferTechId,
+          transferNote: transferNote,
+        }),
+      });
+      if (res.ok) {
+        toast.success("Job transferred successfully");
+        setShowTransfer(false);
+        setSelectedJob(null);
+        fetchMyJobs();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to transfer job");
+      }
+    } catch {
+      toast.error("Failed to transfer job");
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -175,14 +257,12 @@ export default function MyJobsPage() {
 
   return (
     <div className="space-y-6 animate-page-enter">
-      {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-foreground transition-colors">Dashboard</Link>
         <span>/</span>
         <span className="text-foreground font-medium">My Jobs</span>
       </nav>
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">My Jobs</h1>
@@ -195,7 +275,6 @@ export default function MyJobsPage() {
         </Link>
       </div>
 
-      {/* KPI Strip */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard label="Active Jobs" value={counts.ACTIVE} hint="In your workshop" />
         <StatCard label="Ready for Payment" value={counts.WAITING_PAYMENT} hint="With the cashier" trend="up" />
@@ -203,7 +282,6 @@ export default function MyJobsPage() {
         <StatCard label="Total Assigned" value={counts.ALL} hint="All time" />
       </div>
 
-      {/* Filter Tabs */}
       <div className="flex rounded-lg border border-border/50 bg-muted/30 p-1 overflow-x-auto w-fit max-w-full">
         {tabs.map((tab) => (
           <button
@@ -222,7 +300,6 @@ export default function MyJobsPage() {
         ))}
       </div>
 
-      {/* Job List */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -286,7 +363,6 @@ export default function MyJobsPage() {
         </div>
       )}
 
-      {/* Job Editor Drawer */}
       <Sheet open={!!selectedJob} onOpenChange={(open) => !open && setSelectedJob(null)}>
         <SheetContent side="right" className="w-full sm:w-[480px] border-l border-border bg-background text-foreground h-full p-0 flex flex-col">
           {selectedJob && (
@@ -304,32 +380,29 @@ export default function MyJobsPage() {
               </SheetHeader>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* Customer */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Customer</h3>
                   <p className="text-sm font-medium text-foreground">{selectedJob.customer?.name || "—"}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{selectedJob.customer?.phone || "No phone"}</p>
                 </div>
 
-                {/* Problem */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Reported Problem</h3>
                   <p className="text-sm text-foreground leading-relaxed">{selectedJob.problem}</p>
                 </div>
 
-                {/* Diagnosis */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Diagnosis / Notes</label>
                   <textarea
                     value={diagnosis}
                     onChange={(e) => setDiagnosis(e.target.value)}
+                    disabled={!canEditJob(selectedJob)}
                     placeholder="What did you find? What did you do?"
                     rows={3}
-                    className="flex w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                    className="flex w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
-                {/* Materials */}
                 <div className="space-y-3">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Materials Used</label>
                   {materials.length > 0 && (
@@ -342,7 +415,11 @@ export default function MyJobsPage() {
                           </div>
                           <div className="flex items-center gap-2 ml-2">
                             <span className="text-sm font-semibold text-foreground">{Number(m.total).toLocaleString()}</span>
-                            <button onClick={() => removeMaterial(idx)} className="text-muted-foreground hover:text-red-500 p-1 transition-all hover:scale-110 active:scale-95">
+                            <button
+                              onClick={() => removeMaterial(idx)}
+                              disabled={!canEditJob(selectedJob)}
+                              className="text-muted-foreground hover:text-red-500 p-1 transition-all hover:scale-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -356,7 +433,8 @@ export default function MyJobsPage() {
                       placeholder="Material name (e.g., Screen)"
                       value={newMaterial.name}
                       onChange={(e) => setNewMaterial({ ...newMaterial, name: e.target.value })}
-                      className="bg-background/50 border-border/50"
+                      disabled={!canEditJob(selectedJob)}
+                      className="bg-background/50 border-border/50 disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                     <div className="grid grid-cols-2 gap-2">
                       <Input
@@ -365,7 +443,8 @@ export default function MyJobsPage() {
                         min="1"
                         value={newMaterial.quantity}
                         onChange={(e) => setNewMaterial({ ...newMaterial, quantity: e.target.value })}
-                        className="bg-background/50 border-border/50"
+                        disabled={!canEditJob(selectedJob)}
+                        className="bg-background/50 border-border/50 disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                       <Input
                         type="number"
@@ -373,29 +452,36 @@ export default function MyJobsPage() {
                         min="0"
                         value={newMaterial.unitCost}
                         onChange={(e) => setNewMaterial({ ...newMaterial, unitCost: e.target.value })}
-                        className="bg-background/50 border-border/50"
+                        disabled={!canEditJob(selectedJob)}
+                        className="bg-background/50 border-border/50 disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={addMaterial} className="w-full gap-1.5 border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addMaterial}
+                      disabled={!canEditJob(selectedJob)}
+                      className="w-full gap-1.5 border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
                       <Plus className="h-3.5 w-3.5" /> Add Material
                     </Button>
                   </div>
                 </div>
 
-                {/* Labor */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Labor Charge (ETB)</label>
                   <Input
                     type="number"
                     value={laborCharge}
                     onChange={(e) => setLaborCharge(e.target.value)}
+                    disabled={!canEditJob(selectedJob)}
                     placeholder="0"
                     min="0"
-                    className="bg-background/50 border-border/50"
+                    className="bg-background/50 border-border/50 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
-                {/* Cost Summary */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2 transition-colors hover:bg-muted/50">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Materials</span>
@@ -414,54 +500,137 @@ export default function MyJobsPage() {
                 </div>
               </div>
 
-                            {/* Actions Footer */}
-                            <div className="border-t border-border/50 p-4 space-y-2 bg-background">
-                {/* ✅ View Full Details — always visible, first item */}
+              {/* Actions Footer */}
+              <div className="border-t border-border/50 p-4 space-y-2 bg-background">
                 <Link href={`/jobs/${selectedJob.id}`} className="block">
                   <Button variant="outline" className="w-full gap-2 border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
                     <FileText className="h-4 w-4" /> View Full Details
                   </Button>
                 </Link>
 
-                {selectedJob.status === "ASSIGNED" && (
+                {selectedJob.status === "ASSIGNED" && !paymentCollectedOf(selectedJob) && (
                   <Button onClick={() => updateStatus(selectedJob.id, "IN_PROGRESS")} className="w-full gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
                     <Play className="h-4 w-4" /> Start Work
                   </Button>
                 )}
 
-                {["IN_PROGRESS", "WAITING_FOR_PARTS"].includes(selectedJob.status) && (
-                  <>
-                    <Button variant="outline" onClick={() => saveJob(false)} disabled={saving} className="w-full border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                      {saving ? (<><Loader2 className="h-4 w-4 animate-spin" />Saving...</>) : "Save Progress"}
-                    </Button>
-                    <Button onClick={() => saveJob(true)} disabled={saving || grandTotal === 0} className="w-full gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                      <Check className="h-4 w-4" /> Mark Work Done → Send to Cashier
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => updateStatus(selectedJob.id, "NOT_REPAIRABLE")}
-                      className="w-full gap-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                      <Ban className="h-4 w-4" /> Mark Not Repairable
-                    </Button>
-                    {selectedJob.status !== "WAITING_FOR_PARTS" && (
-                      <button onClick={() => updateStatus(selectedJob.id, "WAITING_FOR_PARTS")} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1.5">
-                        <Clock className="h-3 w-3" /> Mark as Waiting for Parts
-                      </button>
-                    )}
-                  </>
-                )}
+                {(() => {
+                  const paymentCollected = paymentCollectedOf(selectedJob);
+                  const isActiveState = ["IN_PROGRESS", "WAITING_FOR_PARTS", "READY_FOR_PICKUP"].includes(selectedJob.status);
+                  const isMyJob = selectedJob.technician?.id === session?.user?.id;
 
-                {selectedJob.status === "READY_FOR_PICKUP" && (
+                  // 🔒 Payment collected → nothing can be changed anymore
+                  if (paymentCollected) {
+                    return (
+                      <div className="text-center py-4 bg-zinc-500/10 border border-zinc-500/20 rounded-xl animate-page-enter">
+                        <p className="text-sm text-zinc-400 font-medium flex items-center justify-center gap-2">
+                          <Lock className="h-4 w-4" /> Locked — payment collected
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">No further updates are allowed on this job.</p>
+                      </div>
+                    );
+                  }
+
+                  // 🔒 Another technician owns the job right now
+                  if (isActiveState && !isMyJob) {
+                    return (
+                      <div className="text-center py-4 bg-blue-500/10 border border-blue-500/20 rounded-xl animate-page-enter">
+                        <p className="text-sm text-blue-500 font-medium flex items-center justify-center gap-2">
+                          <Wrench className="h-4 w-4" /> In progress by {selectedJob.technician?.name || "another technician"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">This job is currently being handled by them. You can view details or wait for a transfer.</p>
+                      </div>
+                    );
+                  }
+
+                  // ✅ I own the job and no payment yet → full editing rights
+                  if (isActiveState && isMyJob) {
+                    return (
+                      <>
+                        {selectedJob.status !== "READY_FOR_PICKUP" ? (
+                          <>
+                            <Button variant="outline" onClick={() => saveJob(false)} disabled={saving} className="w-full border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                              {saving ? (<><Loader2 className="h-4 w-4 animate-spin" />Saving...</>) : "Save Progress"}
+                            </Button>
+                            <Button onClick={() => saveJob(true)} disabled={saving || grandTotal === 0} className="w-full gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                              <Check className="h-4 w-4" /> Mark Work Done → Send to Cashier
+                            </Button>
+                            {grandTotal === 0 && (
+                              <p className="text-[11px] text-red-500 text-center -mt-1">Required: set a labor charge or add materials before sending to the cashier.</p>
+                            )}
+                            <Button variant="outline" onClick={() => setShowTransfer(!showTransfer)} className="w-full gap-2 border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                              <User className="h-4 w-4" /> Transfer to Another Technician
+                            </Button>
+
+                            {showTransfer && (
+                              <div className="space-y-3 p-3 rounded-xl border border-border bg-muted/30 animate-page-enter">
+                                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transfer Job</p>
+                                <select value={transferTechId} onChange={(e) => setTransferTechId(e.target.value)} className={selectClasses}>
+                                  <option value="">Select technician...</option>
+                                  {allTechnicians.filter((t) => t.id !== selectedJob.technician?.id).map((t) => (
+                                    <option key={t.id} value={t.id}>{t.name}{t.role === "OWNER" ? " (Owner)" : ""}</option>
+                                  ))}
+                                </select>
+                                <textarea
+                                  value={transferNote}
+                                  onChange={(e) => setTransferNote(e.target.value)}
+                                  placeholder="Note: What did you do and what needs to be done?"
+                                  rows={2}
+                                  className="flex w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm"
+                                />
+                                <Button onClick={handleTransfer} disabled={transferring} className="w-full">
+                                  {transferring ? "Transferring..." : "Confirm Transfer"}
+                                </Button>
+                              </div>
+                            )}
+
+                            <Button
+                              variant="outline"
+                              onClick={() => updateStatus(selectedJob.id, "NOT_REPAIRABLE")}
+                              className="w-full gap-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            >
+                              <Ban className="h-4 w-4" /> Mark Not Repairable
+                            </Button>
+                            {selectedJob.status !== "WAITING_FOR_PARTS" && (
+                              <button onClick={() => updateStatus(selectedJob.id, "WAITING_FOR_PARTS")} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1.5">
+                                <Clock className="h-3 w-3" /> Mark as Waiting for Parts
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {/* ✅ NEW: Ready for payment but money not collected yet → updates allowed */}
+                            <Button variant="outline" onClick={() => saveJob(false)} disabled={saving} className="w-full border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                              {saving ? (<><Loader2 className="h-4 w-4 animate-spin" />Saving...</>) : "Save Updates"}
+                            </Button>
+                            <p className="text-[11px] text-amber-500 text-center -mt-1">Job is with the cashier — you can still update it until payment is collected.</p>
+                          </>
+                        )}
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {selectedJob.status === "READY_FOR_PICKUP" && paymentCollectedOf(selectedJob) && (
                   <div className="text-center py-3">
                     <p className="text-sm text-emerald-500 font-medium flex items-center justify-center gap-2">
+                      <Check className="h-4 w-4" /> Payment collected
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">This job is closed for editing.</p>
+                  </div>
+                )}
+
+                {selectedJob.status === "READY_FOR_PICKUP" && !paymentCollectedOf(selectedJob) && selectedJob.technician?.id !== session?.user?.id && (
+                  <div className="text-center py-3">
+                    <p className="text-sm text-purple-500 font-medium flex items-center justify-center gap-2">
                       <Check className="h-4 w-4" /> Sent to Cashier
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Waiting for customer payment</p>
                   </div>
                 )}
               </div>
-              </div>
+            </div>
           )}
         </SheetContent>
       </Sheet>

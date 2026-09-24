@@ -1,20 +1,163 @@
 "use server"
 
-import type { ManagerDashboardData } from "../../domain/types/dashboard"
-import { getManagerDashboardData as getMockDashboardData } from "../lib/mock-dashboard-data"
+import { prisma } from "@/lib/prisma"
 
-/**
- * Fetches the manager dashboard data.
- * 
- * TODO: Backend developer should replace the mock implementation below 
- * with real Prisma/database queries once the schema is ready.
- */
-export async function getManagerDashboardData(): Promise<ManagerDashboardData> {
-  // TEMPORARY: Using mock data adapter until backend endpoints are ready
-  return getMockDashboardData()
-  
-  // FUTURE IMPLEMENTATION EXAMPLE:
-  // const summary = await db.payment.aggregate({ ... })
-  // const recentJobs = await db.job.findMany({ ... })
-  // return { summary, recentJobs, ... }
+export async function getManagerDashboardData(): Promise<any> {
+  try {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+    const [
+      todaySalesAgg,
+      todayPaymentsCount,
+      todayJobPaymentsAgg,
+      activeJobs,
+      todayJobs,
+      needsAttentionJobs,
+      recentJobsRaw,
+      technicianWorkloadRaw,
+      recentActivityRaw,
+      revenueTrendRaw,
+      jobPaymentTrendRaw,
+    ] = await Promise.all([
+      // Today's product sales total
+      prisma.sale.aggregate({
+        where: { createdAt: { gte: today } },
+        _sum: { total: true },
+      }),
+      // Count ALL payments today (job payments + product sales)
+      prisma.payment.count({
+        where: { createdAt: { gte: today } },
+      }),
+      // Today's job payment revenue
+      prisma.payment.aggregate({
+        where: {
+          createdAt: { gte: today },
+          jobId: { not: null },
+        },
+        _sum: { amount: true },
+      }),
+      prisma.job.count({
+        where: {
+          status: { in: ["IN_PROGRESS", "WAITING_FOR_PARTS", "ASSIGNED", "READY_FOR_PICKUP"] },
+        },
+      }),
+      prisma.job.count({ where: { createdAt: { gte: today } } }),
+      prisma.job.count({
+        where: { status: { in: ["READY_FOR_PICKUP", "WAITING_FOR_PARTS"] } },
+      }),
+      prisma.job.findMany({
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        include: {
+          customer: { select: { name: true } },
+        },
+      }),
+      prisma.user.findMany({
+        where: { role: { in: ["TECHNICIAN", "OWNER"] }, isActive: true },
+        include: {
+          technicianJobs: {
+            where: {
+              status: { in: ["IN_PROGRESS", "WAITING_FOR_PARTS", "READY_FOR_PICKUP", "ASSIGNED"] },
+            },
+            include: {
+              customer: { select: { name: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+        orderBy: { name: "asc" },
+      }),
+      prisma.activityLog.findMany({
+        take: 10,
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { name: true } },
+        },
+      }),
+      prisma.sale.findMany({
+        where: { createdAt: { gte: weekAgo } },
+        select: { createdAt: true, total: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.payment.findMany({
+        where: {
+          createdAt: { gte: weekAgo },
+          jobId: { not: null },
+        },
+        select: { createdAt: true, amount: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ])
+
+    const recentJobs = recentJobsRaw.map((job) => ({
+      id: job.id,
+      jobNumber: job.jobNumber,
+      customerName: job.customer?.name || "Walk-in",
+      deviceName: `${job.deviceType} ${job.deviceModel || ""}`.trim(),
+      status: job.status,
+      createdAt: job.createdAt.toISOString(),
+    }))
+
+    const technicianActivity = technicianWorkloadRaw.map((tech) => ({
+      technicianId: tech.id,
+      technicianName: tech.name,
+      activeJobs: tech.technicianJobs.length,
+      activeJobsList: tech.technicianJobs.map((job) => ({
+        id: job.id,
+        jobNumber: job.jobNumber,
+        deviceName: `${job.deviceType} ${job.deviceModel || ""}`.trim(),
+        status: job.status,
+        customerName: job.customer?.name || "Walk-in",
+        priority: job.priority,
+      })),
+    }))
+
+    const recentActivity = recentActivityRaw.map((log) => ({
+      id: log.id,
+      message: log.action,
+      actorName: log.user.name,
+      createdAt: log.createdAt.toISOString(),
+      module: log.module,
+    }))
+
+    const revenueByDay = new Map<string, number>()
+    revenueTrendRaw.forEach((sale) => {
+      const dayKey = sale.createdAt.toISOString().split("T")[0]
+      const current = revenueByDay.get(dayKey) || 0
+      revenueByDay.set(dayKey, current + Number(sale.total))
+    })
+    jobPaymentTrendRaw.forEach((payment) => {
+      const dayKey = payment.createdAt.toISOString().split("T")[0]
+      const current = revenueByDay.get(dayKey) || 0
+      revenueByDay.set(dayKey, current + Number(payment.amount))
+    })
+
+    const revenueTrend = Array.from(revenueByDay.entries())
+      .map(([date, revenue]) => ({ date, revenue }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    const productSalesToday = Number(todaySalesAgg._sum.total || 0)
+    const jobPaymentsToday = Number(todayJobPaymentsAgg._sum.amount || 0)
+    const totalRevenueToday = productSalesToday + jobPaymentsToday
+
+    return {
+      summary: {
+        todayRevenue: totalRevenueToday,
+        todayPaymentCount: todayPaymentsCount,
+        activeJobs,
+        todayJobs,
+        needsAttentionCount: needsAttentionJobs,
+      },
+      attentionItems: [],
+      recentJobs,
+      technicianActivity,
+      recentActivity,
+      revenueTrend,
+    }
+  } catch (error) {
+    console.error("Dashboard data fetch error:", error)
+    throw new Error("Failed to load dashboard data")
+  }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(
   request: NextRequest,
@@ -29,7 +30,7 @@ export async function POST(
     if (newPaid >= total) paymentStatus = "PAID";
     else if (newPaid > 0) paymentStatus = "PARTIALLY_PAID";
 
-    await prisma.payment.create({
+    const payment = await prisma.payment.create({
       data: {
         paymentNumber: `PAY-${Date.now().toString().slice(-8)}`,
         customerId: job.customerId,
@@ -40,6 +41,7 @@ export async function POST(
       },
     });
     
+    // Update job
     const updated = await prisma.job.update({
       where: { id },
       data: {
@@ -49,7 +51,34 @@ export async function POST(
         paymentMethod: body.method || "CASH",
         ...(paymentStatus === "PAID" && { status: "DELIVERED" }),
       },
+      include: {
+        customer: true,
+      },
     });
+
+    // Log activity
+    await logActivity({
+      userId: session.user.id,
+      action: `Payment received: ${amount.toLocaleString()} ETB for job ${updated.jobNumber}`,
+      module: "JOBS",
+      recordId: id,
+      details: { 
+        paymentNumber: payment.paymentNumber, 
+        amount, 
+        jobNumber: updated.jobNumber,
+        customerName: updated.customer?.name || "Customer",
+        method: body.method || "CASH"
+      },
+    });
+
+    // Send notification about payment
+    const { notifyPaymentReceived } = await import("@/lib/notifications");
+    await notifyPaymentReceived(
+      updated.jobNumber,
+      amount,
+      updated.customer?.name || "Customer",
+      session.user.name || "Staff"
+    );
 
     return NextResponse.json(updated);
   } catch (error) {

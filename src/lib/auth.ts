@@ -30,6 +30,11 @@ export const authOptions: NextAuthConfig = {
             return null;
           }
 
+          // ✅ NEW: Block disabled/inactive users from logging in
+          if (!user.isActive) {
+            throw new Error("Your account has been disabled. Please contact the administrator.");
+          }
+
           const isPasswordValid = await bcrypt.compare(
             credentials.password as string,
             user.password
@@ -45,7 +50,11 @@ export const authOptions: NextAuthConfig = {
             name: user.name || user.email, // fallback to email if name is missing
             role: user.role,
           };
-        } catch (error) {
+        } catch (error: any) {
+          // Re-throw our custom error so NextAuth can pass the message to the UI
+          if (error instanceof Error && error.message.includes("disabled")) {
+            throw error;
+          }
           console.error("Auth error:", error);
           return null;
         }

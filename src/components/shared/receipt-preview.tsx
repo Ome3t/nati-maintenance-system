@@ -97,9 +97,9 @@ export function useReceiptPrefs() {
 
 /* ---------- The Receipt Itself ---------- */
 export function ReceiptPreview({
-  kind, paper, order, sale, job,
+  kind, paper, order, sale, job, businessProfile,
 }: {
-  kind: ReceiptKind; paper: PaperSize; order: string[]; sale?: any; job?: any;
+  kind: ReceiptKind; paper: PaperSize; order: string[]; sale?: any; job?: any; businessProfile?: any;
 }) {
   const cfg = paperConfig[paper];
   const doc = sale ? sale.invoiceNumber : job?.jobNumber;
@@ -109,6 +109,11 @@ export function ReceiptPreview({
   const servedBy = sale?.cashier?.name || job?.technician?.name;
   const payments = sale?.payments || job?.payments || [];
 
+  // Use business profile data if available, otherwise fallback to defaults
+  const shopName = businessProfile?.businessName || "Nati Mobile";
+  const shopAddress = businessProfile?.address || "Bole Road, Addis Ababa, Ethiopia";
+  const shopPhone = businessProfile?.phone || "+251 911 000 000";
+
   const Divider = () => (
     <div className={cn("my-2", cfg.thermal ? "border-t border-dashed border-black/40" : "border-t border-black/20")} />
   );
@@ -116,9 +121,9 @@ export function ReceiptPreview({
   const sections: Record<string, React.ReactNode> = {
     header: (
       <div key="header" className="text-center">
-        <div className={cn("font-bold uppercase", cfg.thermal ? "text-sm tracking-[0.2em]" : "text-2xl tracking-tight")}>Nati Mobile</div>
-        <div>Bole Road, Addis Ababa, Ethiopia</div>
-        <div>+251 911 000 000</div>
+        <div className={cn("font-bold uppercase", cfg.thermal ? "text-sm tracking-[0.2em]" : "text-2xl tracking-tight")}>{shopName}</div>
+        <div>{shopAddress}</div>
+        <div>{shopPhone}</div>
         <Divider />
       </div>
     ),

@@ -1,45 +1,50 @@
-import { cn } from "@/lib/utils"
-import type { PaymentMethod } from "../../../domain/types/payment"
-import { Banknote, Smartphone, CreditCard, Building2 } from "lucide-react"
+import { Banknote, CreditCard, Smartphone, Wallet, HelpCircle } from "lucide-react"
 
 interface PaymentMethodBadgeProps {
-  method: PaymentMethod
+  method?: string | null
   showIcon?: boolean
 }
 
-export function PaymentMethodBadge({ method, showIcon = true }: PaymentMethodBadgeProps) {
-    const icons: Record<PaymentMethod, any> = {
-        CASH: Banknote,
-        TELEBIRR: Smartphone,
-        BANK_TRANSFER: Building2,
-        CARD: CreditCard,
-      }
-    
-      const labels: Record<PaymentMethod, string> = {
-        CASH: "Cash",
-        TELEBIRR: "Telebirr",
-        BANK_TRANSFER: "Bank Transfer",
-        CARD: "Card",
-      }
-    
-      const styles: Record<PaymentMethod, string> = {
-        CASH: "bg-emerald-500/10 text-emerald-500",
-        TELEBIRR: "bg-purple-500/10 text-purple-500",
-        BANK_TRANSFER: "bg-blue-500/10 text-blue-500",
-        CARD: "bg-orange-500/10 text-orange-500",
-      }
+const config: Record<string, { label: string; Icon: any; classes: string }> = {
+  CASH: {
+    label: "Cash",
+    Icon: Banknote,
+    classes: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+  },
+  BANK_TRANSFER: {
+    label: "Bank",
+    Icon: CreditCard,
+    classes: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  },
+  MOBILE_MONEY: {
+    label: "Mobile",
+    Icon: Smartphone,
+    classes: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  },
+  CREDIT: {
+    label: "Credit",
+    Icon: Wallet,
+    classes: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  },
+  OTHER: {
+    label: "Other",
+    Icon: HelpCircle,
+    classes: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+  },
+}
 
-  const Icon = icons[method]
+export function PaymentMethodBadge({ method, showIcon = true }: PaymentMethodBadgeProps) {
+  // Safe lookup: unknown or null methods fall back to "Other" instead of crashing
+  const key = String(method || "OTHER").toUpperCase()
+  const entry = config[key] || config.OTHER
+  const Icon = entry.Icon
 
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium",
-        styles[method]
-      )}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${entry.classes}`}
     >
       {showIcon && <Icon className="h-3 w-3" />}
-      {labels[method]}
+      {entry.label}
     </span>
   )
 }

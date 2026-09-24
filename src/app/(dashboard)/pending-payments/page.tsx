@@ -28,23 +28,31 @@ export default function PendingPaymentsPage() {
   const [paidAmount, setPaidAmount] = useState("");
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [preferences, setPreferences] = useState({
+    autoGenerateReceipts: true,
+    allowPartialPayments: true,
+  })
 
   useEffect(() => {
-    fetchPendingJobs();
-  }, []);
+    fetchPendingJobs()
+    // Fetch real preferences from DB
+    fetch("/api/settings/preferences")
+      .then((r) => r.json())
+      .then((data) => setPreferences(data))
+      .catch(() => {}) // Failsafe: defaults remain true
+  }, [])
 
   const fetchPendingJobs = async () => {
     try {
-      const res = await fetch("/api/jobs?status=READY_FOR_PICKUP");
-      const data = await res.json();
-      // Only show jobs that still owe money
-      setJobs((Array.isArray(data) ? data : []).filter((j: any) => j.paymentStatus !== "PAID"));
+      const res = await fetch("/api/jobs?status=READY_FOR_PICKUP")
+      const data = await res.json()
+      setJobs((Array.isArray(data) ? data : []).filter((j: any) => j.paymentStatus !== "PAID"))
     } catch (error) {
-      toast.error("Failed to load pending payments");
+      toast.error("Failed to load pending payments")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -54,12 +62,12 @@ export default function PendingPaymentsPage() {
   };
 
   const openJob = (job: any) => {
-    setSelectedJob(job);
-    // Pre-fill with what's actually still owed (falls back to total)
-    const due = Number(job.remainingAmount) > 0 ? Number(job.remainingAmount) : Number(job.total);
-    setPaidAmount(String(due));
-    setPaymentMethod("CASH");
-  };
+    setSelectedJob(job)
+    // If partial payments are disabled, force the exact remaining amount
+    const due = Number(job.remainingAmount) > 0 ? Number(job.remainingAmount) : Number(job.total)
+    setPaidAmount(String(due))
+    setPaymentMethod("CASH")
+  }
 
   const handleCollect = async () => {
     if (!selectedJob) return;
@@ -286,9 +294,15 @@ export default function PendingPaymentsPage() {
                     type="number"
                     value={paidAmount}
                     onChange={(e) => setPaidAmount(e.target.value)}
-                    min="0"
-                    className="bg-background/50 border-border/50 text-lg font-bold"
+                    disabled={!preferences.allowPartialPayments}
+                    className={cn(
+                      "bg-background/50 border-border/50 text-lg font-bold",
+                      !preferences.allowPartialPayments && "opacity-70 cursor-not-allowed"
+                    )}
                   />
+                  {!preferences.allowPartialPayments && (
+                    <p className="text-xs text-amber-500 mt-1">Partial payments are disabled. Full payment required.</p>
+                  )}
                 </div>
 
                 {/* Method */}
@@ -317,24 +331,17 @@ export default function PendingPaymentsPage() {
               {/* Footer actions */}
               <div className="border-t border-border/50 p-4 bg-background space-y-2">
                 <Button onClick={handleCollect} disabled={processing} className="w-full gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                  {processing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4" />
-                      Collect Payment
-                    </>
-                  )}
+                  {processing ? (<> <Loader2 className="h-4 w-4 animate-spin" /> Processing... </>) : (<> <Check className="h-4 w-4" /> Collect Payment </>)}
                 </Button>
-                <Link href={`/receipts/job/${selectedJob.id}`} className="block">
-                  <Button variant="outline" className="w-full gap-2 border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                    <Printer className="h-4 w-4" /> View Receipt / Delivery Note
-                  </Button>
-                </Link>
-              </div>
+                
+                {preferences.autoGenerateReceipts && (
+                  <Link href={`/receipts/job/${selectedJob.id}`} className="block">
+                    <Button variant="outline" className="w-full gap-2 border-border/50 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                      <Printer className="h-4 w-4" /> View Receipt / Delivery Note
+                    </Button>
+                  </Link>
+                  )}
+              </div>   
             </div>
           )}
         </SheetContent>

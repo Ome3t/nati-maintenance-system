@@ -15,6 +15,7 @@ interface Job {
   jobNumber: string;
   customer: { name: string; phone?: string };
   technician?: { name: string };
+  assignedTechnicians?: { id: string; name: string }[];
   deviceType: string;
   deviceModel?: string;
   problem: string;
@@ -126,14 +127,12 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-6 animate-page-enter">
-      {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-foreground transition-colors">Dashboard</Link>
         <span>/</span>
         <span className="text-foreground font-medium">Jobs</span>
       </nav>
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Jobs</h1>
@@ -146,7 +145,6 @@ export default function JobsPage() {
         </Link>
       </div>
 
-      {/* KPI Strip */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard label="Total Jobs" value={counts.ALL} hint="All time" />
         <StatCard label="In Workshop" value={counts.ASSIGNED + counts.IN_PROGRESS + counts.WAITING_FOR_PARTS} hint="Being worked on" />
@@ -154,7 +152,6 @@ export default function JobsPage() {
         <StatCard label="Completed" value={counts.COMPLETED} hint="Finished jobs" />
       </div>
 
-      {/* Status Tabs */}
       <div className="flex rounded-lg border border-border/50 bg-muted/30 p-1 overflow-x-auto w-fit max-w-full">
         {tabs.map((tab) => (
           <button
@@ -173,7 +170,6 @@ export default function JobsPage() {
         ))}
       </div>
 
-      {/* Search */}
       <div className="bg-card border border-border/50 shadow-sm rounded-xl p-4 transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -187,7 +183,6 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-card border border-border/50 shadow-sm rounded-xl overflow-hidden transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
         <div className="overflow-x-auto">
           {loading ? (
@@ -213,7 +208,7 @@ export default function JobsPage() {
                   <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Job #</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Customer</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden md:table-cell">Device</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Technician</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Technician(s)</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
                   <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Updated</th>
                 </tr>
@@ -235,8 +230,16 @@ export default function JobsPage() {
                         {job.deviceType} {job.deviceModel || ""}
                       </td>
                       <td className="px-5 py-4 text-sm hidden sm:table-cell">
-                        {job.technician?.name || (
-                          <span className="text-amber-500 text-xs font-medium">Unassigned</span>
+                        {job.assignedTechnicians && job.assignedTechnicians.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {job.assignedTechnicians.map((t) => (
+                              <span key={t.id} className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                {t.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          job.technician?.name || <span className="text-amber-500 text-xs font-medium">Unassigned</span>
                         )}
                       </td>
                       <td className="px-5 py-4">
@@ -258,7 +261,6 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Job Detail Drawer */}
       <Sheet open={!!selectedJob} onOpenChange={(open) => !open && setSelectedJob(null)}>
         <SheetContent side="right" className="w-full sm:w-[480px] border-l border-border bg-background text-foreground h-full p-0 flex flex-col">
           {selectedJob && (
@@ -276,7 +278,6 @@ export default function JobsPage() {
               </SheetHeader>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* Status + Priority */}
                 <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                   <span className={cn("flex items-center gap-2 text-sm font-medium", statusStyle(selectedJob.status).color)}>
                     <span className="relative flex h-2 w-2">
@@ -292,7 +293,6 @@ export default function JobsPage() {
                   </span>
                 </div>
 
-                {/* Customer */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Customer</h3>
                   <div className="flex items-center gap-2 text-sm text-foreground">
@@ -307,22 +307,30 @@ export default function JobsPage() {
                   )}
                 </div>
 
-                {/* Problem */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Problem</h3>
                   <p className="text-sm text-foreground leading-relaxed">{selectedJob.problem}</p>
                 </div>
 
-                {/* Technician */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Assigned To</h3>
-                  <p className="text-sm text-foreground flex items-center gap-2">
-                    <Wrench className="h-4 w-4 text-muted-foreground" />
-                    {selectedJob.technician?.name || <span className="text-amber-500">Not assigned yet</span>}
-                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedJob.assignedTechnicians && selectedJob.assignedTechnicians.length > 0 ? (
+                      selectedJob.assignedTechnicians.map((t) => (
+                        <span key={t.id} className="flex items-center gap-1.5 text-sm text-foreground bg-primary/10 px-2 py-1 rounded-md">
+                          <Wrench className="h-3.5 w-3.5 text-primary" />
+                          {t.name}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-foreground flex items-center gap-2">
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                        {selectedJob.technician?.name || <span className="text-amber-500">Not assigned yet</span>}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                {/* Payment */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Payment</h3>
                   <div className="flex items-center justify-between">
@@ -341,7 +349,6 @@ export default function JobsPage() {
                   )}
                 </div>
 
-                {/* Timeline */}
                 <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2 transition-colors hover:bg-muted/50">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Timeline</h3>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -353,7 +360,6 @@ export default function JobsPage() {
                 </div>
               </div>
 
-              {/* Footer action */}
               <div className="border-t border-border/50 p-4 bg-background">
                 <Link href={`/jobs/${selectedJob.id}`} className="block">
                   <Button className="w-full transition-all hover:scale-[1.02] active:scale-[0.98]">View Full Details</Button>

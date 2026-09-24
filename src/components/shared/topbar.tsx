@@ -1,90 +1,170 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useRef } from "react"
-import { usePathname } from "next/navigation"
-import { useSession, signOut } from "next-auth/react"
-import { ThemeToggle } from "@/components/shared/theme-toggle"
+import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
+import Link from "next/link";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 import {
   Bell, Search, X, CheckCircle2, AlertCircle, Menu, LogOut, ChevronDown,
-  LayoutDashboard, ShoppingCart, Briefcase, Settings,
-} from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
-import { cn } from "@/lib/utils"
-import Link from "next/link"
+  LayoutDashboard, ShoppingCart, Briefcase, Settings, Wrench, DollarSign, Package,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  link?: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
+/* Fallback destinations for old notifications that have no stored link */
+const fallbackLink = (type: string) => {
+  switch (type) {
+    case "PAYMENT_RECEIVED": return "/sales-history";
+    case "JOB_READY": return "/pos";
+    case "JOB_ASSIGNED":
+    case "JOB_TRANSFERRED": return "/my-jobs";
+    case "LOW_STOCK": return "/inventory";
+    default: return "/";
+  }
+};
 
 export function Topbar() {
-  const pathname = usePathname()
-  const { data: session } = useSession()
+  const pathname = usePathname();
+  const { data: session } = useSession();
 
-  const user = session?.user as any
-  const fullName = user?.name || user?.email?.split("@")[0] || "User"
-  const userRole = user?.role || "TECHNICIAN"
-  const userEmail = user?.email || ""
+  const user = session?.user as any;
+  const fullName = user?.name || user?.email?.split("@")[0] || "User";
+  const userRole = user?.role || "TECHNICIAN";
+  const userEmail = user?.email || "";
 
-  const [showNotifications, setShowNotifications] = useState(false)
-  const [showUserMenu, setShowUserMenu] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const userMenuRef = useRef<HTMLDivElement>(null)
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdowns on outside click
+  /* ✅ Hardened fetch: silent retry on network failures (dev server restarting,
+     laptop sleeping, etc.) instead of spamming console errors */
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch("/api/notifications");
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+      }
+    } catch {
+      // Server unreachable right now — the next poll (30s) will retry automatically
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [session?.user]);
+
+  const handleOpenNotifications = async () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications && unreadCount > 0) {
+      try {
+        await fetch("/api/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ markAllAsRead: true }),
+        });
+        setUnreadCount(0);
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      } catch {
+        // silent: badge will correct itself on next poll
+      }
+    }
+  };
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowNotifications(false)
+        setShowNotifications(false);
       }
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false)
+        setShowUserMenu(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-  // Close user menu when navigating
   useEffect(() => {
-    setShowUserMenu(false)
-  }, [pathname])
+    setShowUserMenu(false);
+  }, [pathname]);
 
   const getCurrentPageName = () => {
-    if (pathname === "/manager" || pathname === "/manager/") return "Overview"
-    const segments = pathname.split("/").filter(Boolean)
-    const lastSegment = segments[segments.length - 1]
-    return lastSegment ? lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1) : "Dashboard"
-  }
+    if (pathname === "/manager" || pathname === "/manager/") return "Overview";
+    const segments = pathname.split("/").filter(Boolean);
+    const lastSegment = segments[segments.length - 1];
+    return lastSegment ? lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1) : "Dashboard";
+  };
 
-  const currentPage = getCurrentPageName()
+  const currentPage = getCurrentPageName();
 
-  // Role-aware quick link in the dropdown
   const roleHome =
     userRole === "OWNER"
       ? { label: "Dashboard", href: "/manager", icon: LayoutDashboard }
       : userRole === "CASHIER"
       ? { label: "Point of Sale", href: "/pos", icon: ShoppingCart }
-      : { label: "My Jobs", href: "/my-jobs", icon: Briefcase }
+      : { label: "My Jobs", href: "/my-jobs", icon: Briefcase };
 
-      const allNavLinks = [
-        // OWNER
-        { name: "Dashboard", href: "/manager", roles: ["OWNER"] },
-        { name: "Customers", href: "/manager/customers", roles: ["OWNER"] },
-        { name: "All Jobs", href: "/jobs", roles: ["OWNER"] },
-        { name: "Payments", href: "/manager/payments", roles: ["OWNER"] },
-        { name: "Reports", href: "/manager/reports", roles: ["OWNER"] },
-        { name: "Inventory", href: "/inventory", roles: ["OWNER"] },
-        { name: "Expenses", href: "/expenses", roles: ["OWNER"] },
-        // CASHIER
-        { name: "POS", href: "/pos", roles: ["CASHIER", "OWNER"] },
-        { name: "Sales History", href: "/sales-history", roles: ["CASHIER", "OWNER"] },
-        // TECHNICIAN
-        { name: "My Jobs", href: "/my-jobs", roles: ["TECHNICIAN", "OWNER"] },
-        { name: "Pending Payments", href: "/pending-payments", roles: ["TECHNICIAN", "OWNER"] },
-        // OWNER settings
-        { name: "Settings", href: "/manager/settings", roles: ["OWNER"] },
-      ]
-    
-      // Only show links this role is allowed to see
-      const navLinks = allNavLinks.filter((link) => link.roles.includes(userRole))
+  const allNavLinks = [
+    { name: "Dashboard", href: "/manager", roles: ["OWNER"] },
+    { name: "Customers", href: "/manager/customers", roles: ["OWNER"] },
+    { name: "All Jobs", href: "/jobs", roles: ["OWNER"] },
+    { name: "Payments", href: "/manager/payments", roles: ["OWNER"] },
+    { name: "Reports", href: "/manager/reports", roles: ["OWNER"] },
+    { name: "Inventory", href: "/inventory", roles: ["OWNER"] },
+    { name: "Expenses", href: "/expenses", roles: ["OWNER"] },
+    { name: "POS", href: "/pos", roles: ["CASHIER", "OWNER"] },
+    { name: "Sales History", href: "/sales-history", roles: ["CASHIER", "OWNER"] },
+    { name: "My Jobs", href: "/my-jobs", roles: ["TECHNICIAN", "OWNER"] },
+    { name: "Pending Payments", href: "/pending-payments", roles: ["TECHNICIAN", "OWNER"] },
+    { name: "Settings", href: "/manager/settings", roles: ["OWNER"] },
+  ];
+
+  const navLinks = allNavLinks.filter((link) => link.roles.includes(userRole));
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case "JOB_READY": return <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />;
+      case "JOB_WAITING_PARTS": return <Package className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />;
+      case "PAYMENT_RECEIVED": return <DollarSign className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />;
+      case "JOB_ASSIGNED": return <Wrench className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />;
+      case "JOB_TRANSFERRED": return <Wrench className="h-4 w-4 text-purple-500 shrink-0 mt-0.5" />;
+      case "LOW_STOCK": return <Package className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />;
+      default: return <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />;
+    }
+  };
+
+  const timeAgo = (date: string) => {
+    const diff = Date.now() - new Date(date).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  };
+
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-4 md:px-6">
       {/* Left: Hamburger & Breadcrumbs */}
@@ -114,42 +194,56 @@ export function Topbar() {
         {/* Notifications */}
         <div className="relative" ref={dropdownRef}>
           <button
-            onClick={() => setShowNotifications(!showNotifications)}
+            onClick={handleOpenNotifications}
             className="relative p-2 rounded-full hover:bg-accent transition-colors"
           >
             <Bell className="h-4 w-4 text-muted-foreground" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background animate-pulse" />
+            )}
           </button>
 
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-80 rounded-lg border border-border bg-card shadow-xl z-50 overflow-hidden animate-dropdown-enter">
               <div className="p-3 border-b border-border flex justify-between items-center bg-muted/30">
                 <span className="text-sm font-semibold text-foreground">Notifications</span>
-                <button onClick={() => setShowNotifications(false)} className="text-muted-foreground hover:text-foreground transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
+                {unreadCount > 0 && (
+                  <span className="text-xs bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full font-medium">
+                    {unreadCount} new
+                  </span>
+                )}
               </div>
               <div className="max-h-72 overflow-y-auto">
-                <div className="p-3 border-b border-border hover:bg-accent/50 cursor-pointer transition-colors">
-                  <div className="flex gap-3">
-                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Job awaiting parts</p>
-                      <p className="text-xs text-muted-foreground mt-1">Job #1041 (Dell Latitude) has been waiting for 24h.</p>
-                      <p className="text-xs text-muted-foreground mt-1.5">2 hours ago</p>
-                    </div>
+                {notifications.length === 0 ? (
+                  <div className="p-6 text-center text-muted-foreground text-sm">
+                    <Bell className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                    No notifications yet
                   </div>
-                </div>
-                <div className="p-3 hover:bg-accent/50 cursor-pointer transition-colors">
-                  <div className="flex gap-3">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Payment received</p>
-                      <p className="text-xs text-muted-foreground mt-1">1,200 ETB collected for Job #1040 by Meron K.</p>
-                      <p className="text-xs text-muted-foreground mt-1.5">5 hours ago</p>
-                    </div>
-                  </div>
-                </div>
+                ) : (
+                  notifications.map((notification) => (
+                    <Link
+                      key={notification.id}
+                      href={notification.link || fallbackLink(notification.type)}
+                      onClick={() => setShowNotifications(false)}
+                      className={cn(
+                        "block p-3 border-b border-border hover:bg-accent/50 cursor-pointer transition-colors",
+                        !notification.read && "bg-primary/5"
+                      )}
+                    >
+                      <div className="flex gap-3">
+                        {getNotificationIcon(notification.type)}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">{notification.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{notification.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1.5">{timeAgo(notification.createdAt)}</p>
+                        </div>
+                        {!notification.read && (
+                          <span className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1.5" />
+                        )}
+                      </div>
+                    </Link>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -175,7 +269,6 @@ export function Topbar() {
 
           {showUserMenu && (
             <div className="absolute right-0 mt-2 w-64 rounded-lg border border-border bg-card shadow-xl z-50 overflow-hidden animate-dropdown-enter">
-              {/* Profile header */}
               <div className="p-4 border-b border-border bg-muted/30">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20">
@@ -191,7 +284,6 @@ export function Topbar() {
                 </span>
               </div>
 
-              {/* Quick links */}
               <div className="p-1.5">
                 <Link
                   href={roleHome.href}
@@ -211,7 +303,6 @@ export function Topbar() {
                 )}
               </div>
 
-              {/* Sign out */}
               <div className="p-1.5 border-t border-border">
                 <button
                   onClick={() => signOut({ callbackUrl: "/login" })}
@@ -225,7 +316,6 @@ export function Topbar() {
           )}
         </div>
 
-        {/* The little sign-out button stays! */}
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="p-2 rounded-full hover:bg-red-500/10 hover:text-red-500 text-muted-foreground transition-colors"
@@ -250,7 +340,7 @@ export function Topbar() {
             </div>
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
               {navLinks.map((link) => {
-                const isActive = pathname === link.href
+                const isActive = pathname === link.href;
                 return (
                   <Link
                     key={link.name}
@@ -265,12 +355,12 @@ export function Topbar() {
                   >
                     {link.name}
                   </Link>
-                )
+                );
               })}
             </nav>
           </div>
         </SheetContent>
       </Sheet>
     </header>
-  )
+  );
 }

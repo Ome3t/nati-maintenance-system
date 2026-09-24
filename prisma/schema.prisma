@@ -71,6 +71,7 @@ model User {
 
   sales          Sale[]
   technicianJobs Job[]             @relation("JobTechnician")
+  assignedJobs   Job[]             @relation("JobAssignedTechnicians") // <-- ADDED FOR MULTI-TECH
   createdJobs    Job[]             @relation("JobCreatedBy")
   payments       Payment[]         @relation("PaymentReceivedBy")
   expenses       Expense[]         @relation("ExpenseEmployee")
@@ -249,6 +250,7 @@ model Job {
 
   customer  Customer  @relation(fields: [customerId], references: [id])
   technician User?    @relation("JobTechnician", fields: [technicianId], references: [id])
+  assignedTechnicians User[] @relation("JobAssignedTechnicians") // <-- ADDED FOR MULTI-TECH
   createdBy User      @relation("JobCreatedBy", fields: [createdById], references: [id])
   items     JobItem[]
   payments  Payment[]
@@ -326,6 +328,7 @@ model Notification {
   title     String
   message   String
   type      String
+  link      String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -401,4 +404,19 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model BusinessProfile {
+  id                   String   @id @default("default")
+  businessName         String   @default("Nati Maintenance")
+  phone                String?
+  email                String?
+  address              String?
+  taxId                String?
+  logo                 String?
+  smsNotifications     Boolean  @default(false)
+  autoGenerateReceipts Boolean  @default(true)
+  allowPartialPayments Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

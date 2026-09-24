@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
+import { notifyLowStock } from "@/lib/notifications";
 
 export async function GET() {
   try {
@@ -41,6 +43,8 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      const lowStockProducts: Array<{ name: string; currentStock: number; minimumStock: number }> = [];
+
       for (const item of body.items) {
         await tx.saleItem.create({
           data: {
@@ -52,7 +56,7 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        await tx.product.update({
+        const updatedProduct = await tx.product.update({
           where: { id: item.productId },
           data: { currentStock: { decrement: item.quantity } },
         });
@@ -67,6 +71,15 @@ export async function POST(request: NextRequest) {
             notes: `Sale ${invoiceNumber}`,
           },
         });
+
+        // Check if product dropped to/below minimum stock
+        if (updatedProduct.currentStock <= updatedProduct.minimumStock) {
+          lowStockProducts.push({
+            name: updatedProduct.name,
+            currentStock: updatedProduct.currentStock,
+            minimumStock: updatedProduct.minimumStock,
+          });
+        }
       }
 
       if (body.paidAmount > 0) {
@@ -82,10 +95,24 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      return newSale;
+      return { sale: newSale, lowStockProducts };
     });
 
-    return NextResponse.json(sale);
+    // Log activity (outside transaction)
+    await logActivity({
+      userId: body.cashierId,
+      action: `Sale completed: ${invoiceNumber} (${Number(sale.sale.total).toLocaleString()} ETB)`,
+      module: "SALES",
+      recordId: sale.sale.id,
+      details: { invoiceNumber, total: Number(sale.sale.total) },
+    });
+
+    // Trigger low-stock alerts (outside transaction)
+    for (const product of sale.lowStockProducts) {
+      await notifyLowStock(product.name, product.currentStock, product.minimumStock);
+    }
+
+    return NextResponse.json(sale.sale);
   } catch (error: any) {
     console.error("Sale creation error:", error);
     return NextResponse.json(

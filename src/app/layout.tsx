@@ -1,37 +1,26 @@
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
-import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "sonner"
-import Providers from "./providers" // <-- Add this import
-import "./globals.css"
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { Providers } from "./providers";
+import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] })
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Nati Maintenance System",
-  description: "Internal business management system for Nati Mobile Maintenance",
-}
+  description: "Job tracking, POS and inventory for Nati Maintenance",
+};
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode
-}) {
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        {/* Wrap everything in the Providers component */}
-        <Providers>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            enableSystem
-          >
-            {children}
-            <Toaster position="bottom-right" richColors theme="system" />
-          </ThemeProvider>
-        </Providers>
+        {/* Providers handles Session, Theme, and Toaster */}
+        <Providers>{children}</Providers>
       </body>
     </html>
-  )
+  );
 }

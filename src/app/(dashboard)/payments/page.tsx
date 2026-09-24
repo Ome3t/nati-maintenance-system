@@ -10,6 +10,9 @@ export default async function ReportsPage() {
     todaySales,
     monthSales,
     totalSales,
+    todayJobPayments,
+    monthJobPayments,
+    totalJobPayments,
     todayJobs,
     monthJobs,
     completedJobs,
@@ -31,6 +34,27 @@ export default async function ReportsPage() {
       _count: true,
     }),
     prisma.sale.aggregate({ _sum: { total: true }, _count: true }),
+    // Job payments today
+    prisma.payment.aggregate({
+      where: { 
+        createdAt: { gte: today },
+        jobId: { not: null }
+      },
+      _sum: { amount: true },
+    }),
+    // Job payments this month
+    prisma.payment.aggregate({
+      where: { 
+        createdAt: { gte: monthStart },
+        jobId: { not: null }
+      },
+      _sum: { amount: true },
+    }),
+    // All job payments
+    prisma.payment.aggregate({
+      where: { jobId: { not: null } },
+      _sum: { amount: true },
+    }),
     prisma.job.count({ where: { createdAt: { gte: today } } }),
     prisma.job.count({ where: { createdAt: { gte: monthStart } } }),
     prisma.job.count({ where: { status: "COMPLETED" } }),
@@ -60,18 +84,28 @@ export default async function ReportsPage() {
     where: { id: { in: productIds } },
   });
 
-  const todayRevenue = Number(todaySales._sum.total || 0);
-  const monthRevenue = Number(monthSales._sum.total || 0);
-  const totalRevenue = Number(totalSales._sum.total || 0);
+  // Calculate combined revenue (product sales + job payments)
+  const todayProductRevenue = Number(todaySales._sum.total || 0);
+  const todayJobRevenue = Number(todayJobPayments._sum.amount || 0);
+  const todayRevenue = todayProductRevenue + todayJobRevenue;
+
+  const monthProductRevenue = Number(monthSales._sum.total || 0);
+  const monthJobRevenue = Number(monthJobPayments._sum.amount || 0);
+  const monthRevenue = monthProductRevenue + monthJobRevenue;
+
+  const totalProductRevenue = Number(totalSales._sum.total || 0);
+  const totalJobRevenue = Number(totalJobPayments._sum.amount || 0);
+  const totalRevenue = totalProductRevenue + totalJobRevenue;
+
   const totalCosts = Number(totalExpenses._sum.amount || 0);
   const monthCosts = Number(monthExpenses._sum.amount || 0);
   const profit = totalRevenue - totalCosts;
   const outstandingAmount = Number(outstanding._sum.remainingAmount || 0);
 
   const cards = [
-    { label: "Today's Revenue", value: `${todayRevenue.toLocaleString()} ETB`, subtitle: `${todaySales._count} sales` },
-    { label: "This Month", value: `${monthRevenue.toLocaleString()} ETB`, subtitle: `${monthSales._count} sales` },
-    { label: "Total Revenue", value: `${totalRevenue.toLocaleString()} ETB`, subtitle: `${totalSales._count} sales` },
+    { label: "Today's Revenue", value: `${todayRevenue.toLocaleString()} ETB`, subtitle: `${todaySales._count} sales + job payments` },
+    { label: "This Month", value: `${monthRevenue.toLocaleString()} ETB`, subtitle: `${monthSales._count} sales + job payments` },
+    { label: "Total Revenue", value: `${totalRevenue.toLocaleString()} ETB`, subtitle: `Product: ${totalProductRevenue.toLocaleString()} | Jobs: ${totalJobRevenue.toLocaleString()}` },
     { label: "Total Payments", value: `${Number(totalPayments._sum.amount || 0).toLocaleString()} ETB`, subtitle: "All time" },
     { label: "Today's Jobs", value: todayJobs.toString(), subtitle: "Created today" },
     { label: "This Month Jobs", value: monthJobs.toString(), subtitle: "Created this month" },
@@ -104,8 +138,20 @@ export default async function ReportsPage() {
         <div className="p-5">
           <div className="space-y-4">
             <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-slate-600">Total Revenue</span>
+              <span className="text-sm text-slate-600">Product Sales Revenue</span>
               <span className="text-lg font-bold text-green-600">
+                {totalProductRevenue.toLocaleString()} ETB
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-slate-600">Job Payments Revenue</span>
+              <span className="text-lg font-bold text-green-600">
+                {totalJobRevenue.toLocaleString()} ETB
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-t border-slate-200 bg-slate-50 px-3 rounded">
+              <span className="text-sm font-semibold text-slate-900">Total Revenue</span>
+              <span className="text-xl font-bold text-slate-900">
                 {totalRevenue.toLocaleString()} ETB
               </span>
             </div>
@@ -143,7 +189,7 @@ export default async function ReportsPage() {
           <h2 className="text-sm font-semibold text-slate-900">Top Selling Products</h2>
         </div>
         {topProducts.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-8">No sales yet</p>
+          <p className="text-sm text-slate-500 text-center py-8">No product sales yet</p>
         ) : (
           <table className="w-full">
             <thead>

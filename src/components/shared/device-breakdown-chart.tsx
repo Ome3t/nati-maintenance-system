@@ -1,57 +1,75 @@
 "use client"
 
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
-import type { DeviceBreakdown } from "../../../domain/types/reports"
-interface DeviceBreakdownChartProps {
-  data: DeviceBreakdown[]
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+} from "recharts"
+import { Package } from "lucide-react"
+
+/* Design-guideline palette: emerald first, then supporting accents */
+const COLORS = [
+  "#10b981", // emerald-500
+  "#3b82f6", // blue-500
+  "#f59e0b", // amber-500
+  "#8b5cf6", // violet-500
+  "#ef4444", // red-500
+  "#14b8a6", // teal-500
+  "#eab308", // yellow-500
+  "#ec4899", // pink-500
+]
+
+/* Crash-proof tooltip */
+const PieTooltip = ({ active, payload }: any) => {
+  if (!active || !payload || payload.length === 0) return null
+  const entry = payload[0]
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-xl">
+      <p className="text-sm font-bold text-foreground">{entry.name}</p>
+      <p className="text-xs text-emerald-500">{Number(entry.value || 0)} jobs</p>
+    </div>
+  )
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
+export function DeviceBreakdownChart({ data }: { data: any[] }) {
+  if (!data || data.length === 0) {
     return (
-      <div className="rounded-lg border border-white/10 bg-[#18181b] p-3 shadow-xl">
-        <p className="text-sm font-bold text-white">{payload[0].name}</p>
-        <p className="text-xs text-zinc-400">{payload[0].value}% of total devices</p>
+      <div className="flex h-[280px] flex-col items-center justify-center gap-2 text-muted-foreground">
+        <Package className="h-8 w-8 opacity-20" />
+        <p className="text-sm">No jobs in this period</p>
       </div>
     )
   }
-  return null
-}
 
-export function DeviceBreakdownChart({ data }: DeviceBreakdownChartProps) {
   return (
-    <div className="h-[250px] w-full flex items-center">
-      <div className="w-1/2 h-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={60}
-              outerRadius={80}
-              paddingAngle={5}
-              dataKey="value"
-            >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="w-1/2 space-y-3 pl-4">
-        {data.map((item, index) => (
-          <div key={index} className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-              <span className="text-zinc-300">{item.name}</span>
-            </div>
-            <span className="font-bold text-white">{item.value}%</span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={280}>
+      <PieChart>
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="name"
+          cx="50%"
+          cy="45%"
+          innerRadius={55}
+          outerRadius={85}
+          paddingAngle={3}
+          cornerRadius={4}
+          stroke="none"
+        >
+          {data.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip content={<PieTooltip />} />
+        <Legend
+          formatter={(value: string) => (
+            <span className="text-xs text-muted-foreground">{value}</span>
+          )}
+        />
+      </PieChart>
+    </ResponsiveContainer>
   )
 }

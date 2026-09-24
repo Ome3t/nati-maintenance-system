@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     include: {
       customer: true,
       technician: true,
+      assignedTechnicians: true, // <-- ADDED: Fetch all assigned techs for the owner view
       createdBy: true,
       items: true,
     },
@@ -54,17 +55,21 @@ export async function POST(request: NextRequest) {
     const remaining = Math.max(0, labor - paid);
     const paymentStatus = paid > 0 && paid >= labor ? "PAID" : paid > 0 ? "PARTIALLY_PAID" : "UNPAID";
 
+    // Prepare multi-technician array
+    const technicianIds: string[] = body.technicianIds || (body.technicianId ? [body.technicianId] : []);
+    const primaryTechnicianId = body.technicianId || (technicianIds.length > 0 ? technicianIds[0] : null);
+
     // Create job with transaction
     const job = await prisma.$transaction(async (tx) => {
       const newJob = await tx.job.create({
         data: {
           jobNumber,
           customerId: customer!.id,
-          technicianId: body.technicianId,
+          technicianId: primaryTechnicianId, // Primary assignee
           createdById,
           deviceType: body.deviceType,
           deviceModel: body.deviceModel || null,
-          serialNumber: body.serialNumber || null, // now actually saved
+          serialNumber: body.serialNumber || null, 
           problem: body.problem,
           priority: body.priority || "MEDIUM",
           status: body.status || "ASSIGNED",
@@ -74,10 +79,15 @@ export async function POST(request: NextRequest) {
           remainingAmount: remaining,
           paymentStatus,
           paymentMethod: body.paymentMethod || null,
+          // <-- ADDED: Connect multiple technicians
+          assignedTechnicians: technicianIds.length > 0 ? {
+            connect: technicianIds.map((id: string) => ({ id }))
+          } : undefined,
         },
         include: {
           customer: true,
           technician: true,
+          assignedTechnicians: true,
         },
       });
 
@@ -95,15 +105,18 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Create notification for technician
-      await tx.notification.create({
-        data: {
-          userId: body.technicianId,
-          title: "New Job Assigned",
-          message: `Job ${jobNumber} has been assigned to you`,
-          type: "JOB_ASSIGNED",
-        },
-      });
+      // Create notification for ALL assigned technicians
+      for (const techId of technicianIds) {
+        await tx.notification.create({
+          data: {
+            userId: techId,
+            title: "New Job Assigned",
+            message: `Job ${jobNumber} has been assigned to you`,
+            type: "JOB_ASSIGNED",
+            link: "/my-jobs",
+          },
+        });
+      }
 
       return newJob;
     });

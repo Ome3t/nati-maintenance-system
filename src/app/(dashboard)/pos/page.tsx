@@ -72,10 +72,31 @@ export default function POSPage() {
   const [intPriority, setIntPriority] = useState("MEDIUM");
   const [intNotes, setIntNotes] = useState("");
   const [intSaving, setIntSaving] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<any>(null)
+
+
+  const [preferences, setPreferences] = useState({
+    autoGenerateReceipts: true,
+    allowPartialPayments: true,
+  })
 
   useEffect(() => {
-    fetch("/api/customers").then((r) => r.json()).then(setCustomers).catch(() => {});
-  }, []);
+    fetch("/api/customers").then((r) => r.json()).then(setCustomers).catch(() => {})
+    fetch("/api/settings/preferences")
+      .then((r) => r.json())
+      .then((data) => setPreferences(data))
+      .catch(() => {})
+  }, [])
+
+  // Add this useEffect after the existing one that fetches preferences
+useEffect(() => {
+  if (payingJob && !preferences.allowPartialPayments) {
+    const remaining = Number(payingJob.remainingAmount) > 0 
+      ? String(Number(payingJob.remainingAmount)) 
+      : "";
+    setPayAmount(remaining);
+  }
+}, [preferences.allowPartialPayments, payingJob]);
 
   /* ---------- Live inventory queue (auto-loads + refreshes every 60s in Products mode) ---------- */
   const fetchStock = async (manual = false) => {
@@ -213,6 +234,7 @@ export default function POSPage() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  
   const total = subtotal;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -236,9 +258,16 @@ export default function POSPage() {
       });
       if (!response.ok) throw new Error("Failed");
       const sale = await response.json();
-      toast.success(`Sale completed! Invoice: ${sale.invoiceNumber}`, {
-        action: { label: "Print Receipt", onClick: () => router.push(`/receipts/${sale.id}`) },
+      
+      // Store the transaction for the visible success bar
+      setLastTransaction({
+        type: "sale",
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        url: `/receipts/${sale.id}`
       });
+      
+      toast.success(`Sale completed! Invoice: ${sale.invoiceNumber}`);
       setCart([]); setSelectedCustomer(""); setPaymentMethod("CASH");
       setShowPayment(false); setShowMobileCart(false);
       fetchStock(); // refresh stock instantly after a sale
@@ -253,7 +282,9 @@ export default function POSPage() {
   /* ---------------- Job payment ---------------- */
   const openJobPayment = (job: any) => {
     setPayingJob(job);
-    setPayAmount(Number(job.remainingAmount) > 0 ? String(Number(job.remainingAmount)) : "");
+    // FIX: Always pre-fill with the remaining amount (or total if no payments yet)
+    const due = Number(job.remainingAmount) > 0 ? Number(job.remainingAmount) : Number(job.total);
+    setPayAmount(String(due));
     setJobTotalInput("");
   };
 
@@ -284,10 +315,17 @@ export default function POSPage() {
         body: JSON.stringify({ amount, method: payMethod }),
       });
       if (!res.ok) throw new Error("Failed");
-      toast.success(`Payment recorded for ${payingJob.jobNumber}`, {
-        action: { label: "Print Receipt", onClick: () => router.push(`/receipts/job/${payingJob.id}`) },
+      
+      // Store the transaction for the visible success bar
+      setLastTransaction({
+        type: "job",
+        id: payingJob.id,
+        jobNumber: payingJob.jobNumber,
+        url: `/receipts/job/${payingJob.id}`
       });
-      setLastJobPayment({ id: payingJob.id, jobNumber: payingJob.jobNumber });
+      
+      toast.success(`Payment recorded for ${payingJob.jobNumber}`);
+      setLastJobPayment({ id: payingJob.id, jobNumber: payingJob.jobNumber })
       setPayingJob(null); setPayAmount(""); setPayMethod("CASH"); setJobTotalInput("");
       fetchQueue();
     } catch {
@@ -296,6 +334,7 @@ export default function POSPage() {
       setPayProcessing(false);
     }
   };
+    
 
   /* ---------------- Job intake ---------------- */
   const handleIntake = async () => {
@@ -476,9 +515,7 @@ export default function POSPage() {
               <Wrench className="h-4 w-4" /> Job Payments
             </button>
           </div>
-          <Button variant="outline" onClick={() => setShowIntake(true)} className="gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] border-border/50">
-            <ClipboardList className="h-4 w-4" /> New Job
-          </Button>
+          
         </div>
       </div>
 
@@ -784,9 +821,21 @@ export default function POSPage() {
                   </div>
                 )}
 
-                <div className="space-y-2">
+<div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Amount to receive (ETB)</label>
-                  <Input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="bg-background/50 border-border/50 text-lg font-bold" />
+                  <Input 
+                    type="number" 
+                    value={payAmount} 
+                    onChange={(e) => setPayAmount(e.target.value)} 
+                    disabled={!preferences.allowPartialPayments}
+                    className={cn(
+                      "bg-background/50 border-border/50 text-lg font-bold",
+                      !preferences.allowPartialPayments && "opacity-70 cursor-not-allowed"
+                    )} 
+                  />
+                  {!preferences.allowPartialPayments && (
+                    <p className="text-xs text-amber-500 mt-1">Partial payments are disabled. Full payment required.</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -890,6 +939,56 @@ export default function POSPage() {
           </div>
         </SheetContent>
       </Sheet>
+            {/* Transaction Success Bar */}
+            {lastTransaction && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom duration-300">
+          <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 border-t-2 border-emerald-400 shadow-2xl">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 text-white">
+                <div className="p-2 bg-white/20 rounded-full backdrop-blur-sm">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-bold text-base">
+                    {lastTransaction.type === "sale" ? "Sale Completed!" : "Payment Recorded!"}
+                  </p>
+                  <p className="text-sm text-white/90">
+                    {lastTransaction.type === "sale" 
+                      ? `Invoice: ${lastTransaction.invoiceNumber}` 
+                      : `Job: ${lastTransaction.jobNumber}`
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                {preferences.autoGenerateReceipts && (
+                  <Link href={lastTransaction.url}>
+                    <Button 
+                      size="lg"
+                      className="bg-white text-emerald-700 hover:bg-white/90 font-semibold gap-2 shadow-lg transition-all hover:scale-105 active:scale-95"
+                    >
+                      <Printer className="w-5 h-5" />
+                      Print Receipt
+                    </Button>
+                  </Link>
+                )}
+                
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setLastTransaction(null)}
+                  className="text-white hover:bg-white/20 p-2"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

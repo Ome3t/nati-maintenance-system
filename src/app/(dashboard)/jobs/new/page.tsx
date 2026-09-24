@@ -42,7 +42,7 @@ export default function NewJobPage() {
   const [priority, setPriority] = useState("MEDIUM");
 
   const [technicians, setTechnicians] = useState<any[]>([]);
-  const [selectedTechnician, setSelectedTechnician] = useState("");
+  const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]);
 
   const [laborCharge, setLaborCharge] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
@@ -54,13 +54,19 @@ export default function NewJobPage() {
   const userRole = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
 
+  const toggleTechnician = (id: string) => {
+    setSelectedTechnicians(prev => 
+      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+    );
+  };
+
   useEffect(() => {
     fetch("/api/technicians")
       .then((r) => r.json())
       .then((data) => {
         setTechnicians(Array.isArray(data) ? data : []);
         if (userRole === "TECHNICIAN" && userId) {
-          setSelectedTechnician(userId);
+          setSelectedTechnicians([userId]);
         }
       })
       .catch(() => {});
@@ -77,8 +83,8 @@ export default function NewJobPage() {
       toast.error("Please fill in all required fields");
       return;
     }
-    if (!selectedTechnician) {
-      toast.error("Please select a technician");
+    if (selectedTechnicians.length === 0) {
+      toast.error("Please select at least one technician");
       return;
     }
 
@@ -95,7 +101,8 @@ export default function NewJobPage() {
           serialNumber,
           problem,
           priority,
-          technicianId: selectedTechnician,
+          technicianId: selectedTechnicians[0], // Primary assignee
+          technicianIds: selectedTechnicians,   // All assignees
           createdById: userId,
           laborCharge: labor,
           paymentMethod,
@@ -139,7 +146,7 @@ export default function NewJobPage() {
 
       <div>
         <h1 className="text-2xl font-bold text-foreground">Create Repair Job</h1>
-        <p className="text-xs text-muted-foreground mt-1">Register a new device for repair and assign it to a technician.</p>
+        <p className="text-xs text-muted-foreground mt-1">Register a new device for repair and assign it to technicians.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -226,19 +233,36 @@ export default function NewJobPage() {
         <div className="bg-card border border-border/50 shadow-sm rounded-xl overflow-hidden transition-all duration-300 ease-out hover:border-white/10 dark:hover:border-zinc-700">
           <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
             <Wrench className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground">Assign Technician</h2>
+            <h2 className="text-sm font-semibold text-foreground">Assign Technician(s)</h2>
           </div>
-          <div className="p-5 space-y-2">
-            <select value={selectedTechnician} onChange={(e) => setSelectedTechnician(e.target.value)} className={selectClasses} required>
-              <option value="">Select technician</option>
-              {technicians.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} {t.phone ? `— ${t.phone}` : ""}
-                </option>
-              ))}
-            </select>
-            {technicians.length === 0 && (
+          <div className="p-5">
+            {technicians.length === 0 ? (
               <p className="text-xs text-muted-foreground">No technicians found yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {technicians.map((t) => (
+                  <label key={t.id} className={cn(
+                    "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all hover:scale-[1.01]",
+                    selectedTechnicians.includes(t.id) 
+                      ? "bg-primary/10 border-primary text-foreground shadow-sm" 
+                      : "border-border/50 hover:bg-accent/50"
+                  )}>
+                    <input 
+                      type="checkbox" 
+                      checked={selectedTechnicians.includes(t.id)}
+                      onChange={() => toggleTechnician(t.id)}
+                      className="h-4 w-4 rounded border-border accent-primary"
+                    />
+                    <div>
+                    <p className="text-sm font-medium">
+                        {t.name}
+                        {t.role === "OWNER" && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-primary">(Owner)</span>}
+                      </p>
+                      {t.phone && <p className="text-xs text-muted-foreground">{t.phone}</p>}
+                    </div>
+                  </label>
+                ))}
+              </div>
             )}
           </div>
         </div>
