@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import type { NextAuthConfig } from "next-auth";
 
 export const authOptions: NextAuthConfig = {
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
