@@ -21,16 +21,13 @@ export async function getManagerDashboardData(): Promise<any> {
       revenueTrendRaw,
       jobPaymentTrendRaw,
     ] = await Promise.all([
-      // Today's product sales total
       prisma.sale.aggregate({
         where: { createdAt: { gte: today } },
         _sum: { total: true },
       }),
-      // Count ALL payments today (job payments + product sales)
       prisma.payment.count({
         where: { createdAt: { gte: today } },
       }),
-      // Today's job payment revenue
       prisma.payment.aggregate({
         where: {
           createdAt: { gte: today },
@@ -122,16 +119,24 @@ export async function getManagerDashboardData(): Promise<any> {
       module: log.module,
     }))
 
+    // ✅ FIXED: always emit a full 7-day series (zero-filled) so the chart
+    // renders even when the database only has one day of data
     const revenueByDay = new Map<string, number>()
+    for (let i = 6; i >= 0; i--) {
+      const dayKey = new Date(now.getTime() - i * 86400000).toISOString().split("T")[0]
+      revenueByDay.set(dayKey, 0)
+    }
     revenueTrendRaw.forEach((sale) => {
       const dayKey = sale.createdAt.toISOString().split("T")[0]
-      const current = revenueByDay.get(dayKey) || 0
-      revenueByDay.set(dayKey, current + Number(sale.total))
+      if (revenueByDay.has(dayKey)) {
+        revenueByDay.set(dayKey, (revenueByDay.get(dayKey) || 0) + Number(sale.total))
+      }
     })
     jobPaymentTrendRaw.forEach((payment) => {
       const dayKey = payment.createdAt.toISOString().split("T")[0]
-      const current = revenueByDay.get(dayKey) || 0
-      revenueByDay.set(dayKey, current + Number(payment.amount))
+      if (revenueByDay.has(dayKey)) {
+        revenueByDay.set(dayKey, (revenueByDay.get(dayKey) || 0) + Number(payment.amount))
+      }
     })
 
     const revenueTrend = Array.from(revenueByDay.entries())
